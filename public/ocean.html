@@ -1,0 +1,18 @@
+<html>
+  <head>
+    <title>Community Components Example</title>
+    <meta name="description" content="Community Components Example">
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <script src="https://unpkg.com/@c-frame/aframe-particle-system-component@1.2.x/dist/aframe-particle-system-component.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aframe-simple-sun-sky@^1.2.2/simple-sun-sky.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
+  </head>
+  <body>
+    <a-scene>
+        <a-sky color="black"></a-sky>
+      <a-entity id="ocean" ocean="density:1000; width: 500; depth: 500; speed: 0.1"
+                material="color: #87cefa; opacity: 0.1; metalness: 0.1; roughness: 0.1"
+                rotation="-90 0 0"></a-entity>
+    </a-scene>
+  </body>
+</html>
