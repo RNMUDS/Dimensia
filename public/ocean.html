@@ -1,18 +1,175 @@
 <html>
   <head>
-    <title>Community Components Example</title>
-    <meta name="description" content="Community Components Example">
+    <title>Ocean VR with Hand Tracking</title>
+    <meta name="description" content="Ocean VR Experience with Hand Tracking">
     <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
     <script src="https://unpkg.com/@c-frame/aframe-particle-system-component@1.2.x/dist/aframe-particle-system-component.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/aframe-simple-sun-sky@^1.2.2/simple-sun-sky.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aframe-hand-tracking-controls@0.1.0/dist/aframe-hand-tracking-controls.min.js"></script>
   </head>
   <body>
-    <a-scene>
+    <a-scene webxr="optionalFeatures: hand-tracking">
         <a-sky color="black"></a-sky>
-      <a-entity id="ocean" ocean="density:1000; width: 500; depth: 500; speed: 0.1"
-                material="color: #87cefa; opacity: 0.1; metalness: 0.1; roughness: 0.1"
-                rotation="-90 0 0"></a-entity>
+        
+        <!-- Lights -->
+        <a-light type="ambient" color="#404040"></a-light>
+        <a-light type="point" position="0 10 5" color="#87cefa" intensity="0.5"></a-light>
+        
+        <!-- Ocean -->
+        <a-entity id="ocean" ocean="density:1000; width: 500; depth: 500; speed: 0.1"
+                  material="color: #87cefa; opacity: 0.1; metalness: 0.1; roughness: 0.1"
+                  rotation="-90 0 0"></a-entity>
+        
+        <!-- Hand entities -->
+        <a-entity id="leftHand" hand-tracking-controls="hand: left"></a-entity>
+        <a-entity id="rightHand" hand-tracking-controls="hand: right"></a-entity>
+        
+        <!-- Custom hand visualization component -->
+        <script>
+          AFRAME.registerComponent('custom-hand-mesh', {
+            schema: {
+              hand: {type: 'string', default: 'right'}
+            },
+            
+            init: function() {
+              this.jointMeshes = {};
+              this.boneConnections = [];
+              
+              // Define finger connections
+              this.fingerConnections = [
+                // Thumb
+                ['wrist', 'thumb-metacarpal'],
+                ['thumb-metacarpal', 'thumb-phalanx-proximal'],
+                ['thumb-phalanx-proximal', 'thumb-phalanx-distal'],
+                ['thumb-phalanx-distal', 'thumb-tip'],
+                // Index finger
+                ['wrist', 'index-finger-metacarpal'],
+                ['index-finger-metacarpal', 'index-finger-phalanx-proximal'],
+                ['index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate'],
+                ['index-finger-phalanx-intermediate', 'index-finger-phalanx-distal'],
+                ['index-finger-phalanx-distal', 'index-finger-tip'],
+                // Middle finger
+                ['wrist', 'middle-finger-metacarpal'],
+                ['middle-finger-metacarpal', 'middle-finger-phalanx-proximal'],
+                ['middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate'],
+                ['middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal'],
+                ['middle-finger-phalanx-distal', 'middle-finger-tip'],
+                // Ring finger
+                ['wrist', 'ring-finger-metacarpal'],
+                ['ring-finger-metacarpal', 'ring-finger-phalanx-proximal'],
+                ['ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate'],
+                ['ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal'],
+                ['ring-finger-phalanx-distal', 'ring-finger-tip'],
+                // Pinky finger
+                ['wrist', 'pinky-finger-metacarpal'],
+                ['pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal'],
+                ['pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate'],
+                ['pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal'],
+                ['pinky-finger-phalanx-distal', 'pinky-finger-tip']
+              ];
+              
+              // Create materials
+              this.jointMaterial = new THREE.MeshPhongMaterial({
+                color: 0xffdbac,
+                emissive: 0xffdbac,
+                emissiveIntensity: 0.1
+              });
+              
+              this.boneMaterial = new THREE.MeshPhongMaterial({
+                color: 0xffdbac,
+                emissive: 0xffdbac,
+                emissiveIntensity: 0.1
+              });
+              
+              // Joint geometry (larger cubes)
+              this.jointGeometry = new THREE.BoxGeometry(0.02, 0.02, 0.02); // 2倍の大きさ
+              
+              // Wait for hand-tracking to be ready
+              this.el.addEventListener('hand-tracking-extras-ready', () => {
+                this.setupHandMesh();
+              });
+            },
+            
+            setupHandMesh: function() {
+              const hand = this.el.components['hand-tracking-controls'];
+              if (!hand || !hand.joints) return;
+              
+              // Create joint meshes
+              for (const jointName in hand.joints) {
+                const joint = hand.joints[jointName];
+                const mesh = new THREE.Mesh(this.jointGeometry, this.jointMaterial);
+                this.el.object3D.add(mesh);
+                this.jointMeshes[jointName] = mesh;
+              }
+              
+              // Create bone connections
+              this.fingerConnections.forEach((connection, index) => {
+                const cylinderGeometry = new THREE.CylinderGeometry(0.01, 0.01, 1, 8); // 太さ0.02（直径）
+                const cylinder = new THREE.Mesh(cylinderGeometry, this.boneMaterial);
+                this.el.object3D.add(cylinder);
+                this.boneConnections[index] = cylinder;
+              });
+            },
+            
+            tick: function() {
+              const hand = this.el.components['hand-tracking-controls'];
+              if (!hand || !hand.joints) return;
+              
+              // Update joint positions
+              for (const jointName in hand.joints) {
+                const joint = hand.joints[jointName];
+                const mesh = this.jointMeshes[jointName];
+                
+                if (joint && mesh) {
+                  // Copy position and rotation from joint
+                  mesh.position.copy(joint.position);
+                  mesh.quaternion.copy(joint.quaternion);
+                  mesh.visible = true;
+                }
+              }
+              
+              // Update bone connections
+              this.fingerConnections.forEach((connection, index) => {
+                const [joint1Name, joint2Name] = connection;
+                const joint1 = hand.joints[joint1Name];
+                const joint2 = hand.joints[joint2Name];
+                const cylinder = this.boneConnections[index];
+                
+                if (joint1 && joint2 && cylinder) {
+                  // Calculate midpoint
+                  const midpoint = new THREE.Vector3();
+                  midpoint.addVectors(joint1.position, joint2.position).multiplyScalar(0.5);
+                  
+                  // Calculate distance
+                  const distance = joint1.position.distanceTo(joint2.position);
+                  
+                  // Update cylinder position and scale
+                  cylinder.position.copy(midpoint);
+                  cylinder.scale.y = distance;
+                  
+                  // Orient cylinder
+                  const direction = new THREE.Vector3();
+                  direction.subVectors(joint2.position, joint1.position).normalize();
+                  const quaternion = new THREE.Quaternion();
+                  quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+                  cylinder.quaternion.copy(quaternion);
+                  
+                  cylinder.visible = true;
+                }
+              });
+            }
+          });
+          
+          // Add custom hand mesh component to hand entities
+          document.querySelector('#leftHand').setAttribute('custom-hand-mesh', 'hand: left');
+          document.querySelector('#rightHand').setAttribute('custom-hand-mesh', 'hand: right');
+        </script>
+        
+        <!-- Camera rig for VR -->
+        <a-entity id="cameraRig" position="0 1.6 0">
+          <a-camera></a-camera>
+        </a-entity>
     </a-scene>
   </body>
 </html>
