@@ -103,7 +103,7 @@
         };
 
         const vr_params = {
-            count: 5000,              // パーティクルの数
+            count: 100000,              // パーティクルの数
             spread: 100,              // パーティクルが広がる範囲
             particleSize: 0.01,        // パーティクルの大きさ
             amplitude: 1,            // 波の振幅（高さ）
@@ -282,7 +282,7 @@
         scene.add(floor);
         
 
-        // === VRコントローラーの基本セットアップ ===
+        // === VRコントローラーとハンドトラッキングのセットアップ ===
         // コントローラー1（右手）
         const controller1 = renderer.xr.getController(0);
         cameraGroup.add(controller1);
@@ -290,6 +290,65 @@
         // コントローラー2（左手）
         const controller2 = renderer.xr.getController(1);
         cameraGroup.add(controller2);
+        
+        // ハンドトラッキング用のハンドオブジェクト
+        const hand1 = renderer.xr.getHand(0);
+        const hand2 = renderer.xr.getHand(1);
+        cameraGroup.add(hand1);
+        cameraGroup.add(hand2);
+        
+        // ハンドモデルの作成（立方体）
+        const handGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+        const handMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0xffdbac,
+            emissive: 0xffdbac,
+            emissiveIntensity: 0.1
+        });
+        
+        // 関節を接続する線のマテリアル
+        const boneMaterial = new THREE.LineBasicMaterial({
+            color: 0xffdbac,
+            linewidth: 2
+        });
+        
+        // 各関節用のメッシュとボーンラインを作成
+        const jointMeshes1 = {};
+        const jointMeshes2 = {};
+        const boneLines1 = [];
+        const boneLines2 = [];
+        
+        // 指の接続関係を定義
+        const fingerConnections = [
+            // 親指
+            ['wrist', 'thumb-metacarpal'],
+            ['thumb-metacarpal', 'thumb-phalanx-proximal'],
+            ['thumb-phalanx-proximal', 'thumb-phalanx-distal'],
+            ['thumb-phalanx-distal', 'thumb-tip'],
+            // 人差し指
+            ['wrist', 'index-finger-metacarpal'],
+            ['index-finger-metacarpal', 'index-finger-phalanx-proximal'],
+            ['index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate'],
+            ['index-finger-phalanx-intermediate', 'index-finger-phalanx-distal'],
+            ['index-finger-phalanx-distal', 'index-finger-tip'],
+            // 中指
+            ['wrist', 'middle-finger-metacarpal'],
+            ['middle-finger-metacarpal', 'middle-finger-phalanx-proximal'],
+            ['middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate'],
+            ['middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal'],
+            ['middle-finger-phalanx-distal', 'middle-finger-tip'],
+            // 薬指
+            ['wrist', 'ring-finger-metacarpal'],
+            ['ring-finger-metacarpal', 'ring-finger-phalanx-proximal'],
+            ['ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate'],
+            ['ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal'],
+            ['ring-finger-phalanx-distal', 'ring-finger-tip'],
+            // 小指
+            ['wrist', 'pinky-finger-metacarpal'],
+            ['pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal'],
+            ['pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate'],
+            ['pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal'],
+            ['pinky-finger-phalanx-distal', 'pinky-finger-tip']
+        ];
         
         // シンプルなコントローラービジュアル
         const controllerGeometry = new THREE.CylinderGeometry(0.01, 0.02, 0.08, 6);
@@ -455,6 +514,80 @@
             }
         }
         
+        // ハンドトラッキングの更新関数
+        function updateHandTracking(hand, jointMeshes, boneLines) {
+            if (renderer.xr.isPresenting && hand.joints) {
+                // 各関節の位置を更新
+                for (const jointName in hand.joints) {
+                    const joint = hand.joints[jointName];
+                    
+                    // 関節のメッシュがなければ作成
+                    if (!jointMeshes[jointName]) {
+                        const mesh = new THREE.Mesh(handGeometry, handMaterial);
+                        scene.add(mesh);
+                        jointMeshes[jointName] = mesh;
+                    }
+                    
+                    // 関節の位置と回転を更新
+                    const worldPosition = new THREE.Vector3();
+                    const worldQuaternion = new THREE.Quaternion();
+                    const worldScale = new THREE.Vector3();
+                    
+                    joint.getWorldPosition(worldPosition);
+                    joint.getWorldQuaternion(worldQuaternion);
+                    joint.getWorldScale(worldScale);
+                    
+                    jointMeshes[jointName].position.copy(worldPosition);
+                    jointMeshes[jointName].quaternion.copy(worldQuaternion);
+                    jointMeshes[jointName].scale.copy(worldScale);
+                    jointMeshes[jointName].visible = true;
+                }
+                
+                // ボーンラインを更新
+                fingerConnections.forEach((connection, index) => {
+                    const [joint1Name, joint2Name] = connection;
+                    
+                    if (hand.joints[joint1Name] && hand.joints[joint2Name]) {
+                        // ラインがなければ作成
+                        if (!boneLines[index]) {
+                            const lineGeometry = new THREE.BufferGeometry();
+                            const positions = new Float32Array(6); // 2点 x 3座標
+                            lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                            const line = new THREE.Line(lineGeometry, boneMaterial);
+                            scene.add(line);
+                            boneLines[index] = line;
+                        }
+                        
+                        // ラインの位置を更新
+                        const pos1 = new THREE.Vector3();
+                        const pos2 = new THREE.Vector3();
+                        hand.joints[joint1Name].getWorldPosition(pos1);
+                        hand.joints[joint2Name].getWorldPosition(pos2);
+                        
+                        const positions = boneLines[index].geometry.attributes.position.array;
+                        positions[0] = pos1.x;
+                        positions[1] = pos1.y;
+                        positions[2] = pos1.z;
+                        positions[3] = pos2.x;
+                        positions[4] = pos2.y;
+                        positions[5] = pos2.z;
+                        boneLines[index].geometry.attributes.position.needsUpdate = true;
+                        boneLines[index].visible = true;
+                    }
+                });
+            } else {
+                // VRモードでない場合は非表示
+                for (const jointName in jointMeshes) {
+                    if (jointMeshes[jointName]) {
+                        jointMeshes[jointName].visible = false;
+                    }
+                }
+                boneLines.forEach(line => {
+                    if (line) line.visible = false;
+                });
+            }
+        }
+        
         // パーティクル数の表示は recreateParticles() 内で行われるため、この行は削除
         
         // === アニメーションループ ===
@@ -473,10 +606,16 @@
         function animate() {
             const time = clock.getElapsedTime() * params.speed;
             
-            // 各パーティクルの位置を更新
+            // 各パーティクルの位置を更新（x=100, z=100を中心に振動）
+            const centerX = 100;
+            const centerZ = 0;
+            
             for (let i = 0; i < params.count; i++) {
                 const pos = particlePositions[i];
-                const distance = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+                // 中心点(100, 100)からの距離を計算
+                const dx = pos.x - centerX;
+                const dz = pos.z - centerZ;
+                const distance = Math.sqrt(dx * dx + dz * dz);
                 const y = params.amplitude * Math.sin(distance * params.frequency - time);
                 
                 dummy.position.set(pos.x, y, pos.z);
@@ -501,6 +640,10 @@
                 // VRモード時のテレポート更新
                 updateTeleport(controller1, controller1Squeezing);
                 updateTeleport(controller2, controller2Squeezing);
+                
+                // ハンドトラッキングの更新
+                updateHandTracking(hand1, jointMeshes1, boneLines1);
+                updateHandTracking(hand2, jointMeshes2, boneLines2);
             }
         }
         
@@ -516,17 +659,24 @@
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
+                
+                // VRモードでない場合はハンドメッシュを非表示
+                for (const jointName in jointMeshes1) {
+                    if (jointMeshes1[jointName]) jointMeshes1[jointName].visible = false;
+                }
+                for (const jointName in jointMeshes2) {
+                    if (jointMeshes2[jointName]) jointMeshes2[jointName].visible = false;
+                }
+                boneLines1.forEach(line => {
+                    if (line) line.visible = false;
+                });
+                boneLines2.forEach(line => {
+                    if (line) line.visible = false;
+                });
             }
         });
         
-        // コントローラーのイベント
-        controller1.addEventListener('selectstart', () => {
-            params.speed = params.speed === 2.0 ? 0.5 : 2.0; // 速度切り替え
-        });
-        
-        controller2.addEventListener('selectstart', () => {
-            params.amplitude = params.amplitude === 10 ? 20 : 10; // 振幅切り替え
-        });
+        // コントローラーのイベントを削除（クリックで波が強くならないように）
     </script>
 </body>
 </html>
