@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Particle Wave VR - Three.js</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #87cefa;
+            font-size: 14px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #controls {
+            position: absolute;
+            bottom: 60px;
+            left: 10px;
+            color: #87cefa;
+            font-size: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #vrButton {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border: 1px solid #87cefa;
+            background: rgba(0,0,0,0.7);
+            color: #87cefa;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            z-index: 100;
+            transition: all 0.3s;
+        }
+        #vrButton:hover {
+            background: rgba(135, 206, 250, 0.2);
+            border-color: #ffffff;
+            color: #ffffff;
+        }
+        #vrButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js",
+            "three/": "https://cdn.jsdelivr.net/npm/three@0.128.0/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="info">
+        Particle Wave VR Effect<br>
+        Particles: <span id="particleCount">5000</span><br>
+        <span id="vrStatus">VR Not Supported</span>
+    </div>
+    
+    <div id="controls">
+        <strong>PC Controls:</strong><br>
+        WASD - Move<br>
+        Shift - Run<br>
+        Mouse - Look around<br>
+        <br>
+        <strong>VR Controls:</strong><br>
+        Grip - Teleport<br>
+        Trigger - Change settings<br>
+        Pinch - Change color/frequency
+    </div>
+    
+    <button id="vrButton">Enter VR</button>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        
+        // === パーティクルウェーブのパラメータ ===
+        const pc_params = {
+            count: 500000,              // パーティクルの数
+            spread: 200,              // パーティクルが広がる範囲
+
+            particleSize: 0.01,        // パーティクルの大きさ
+            amplitude: 1,            // 波の振幅（高さ）
+            frequency: 0.2,          // 波の周波数（細かさ）
+            speed: 0.2,               // 波が広がる速さ
+            color: 0x87cefa          // パーティクルの色（ライトスカイブルー）
+        };
+
+        const vr_params = {
+            count: 5000,              // パーティクルの数
+            spread: 100,              // パーティクルが広がる範囲
+            particleSize: 0.01,        // パーティクルの大きさ
+            amplitude: 1,            // 波の振幅（高さ）
+            frequency: 0.2,          // 波の周波数（細かさ）
+            speed: 0.2,               // 波が広がる速さ
+            color: 0x87cefa          // パーティクルの色（ライトスカイブルー）
+        };
+
+        // === デバイスごとにparticle数を調整 ===
+        // デバイスタイプの検出とパーティクル数の決定
+        const isMobileVR = /Quest|Android/i.test(navigator.userAgent);
+        const isVRDevice = 'xr' in navigator && isMobileVR;
+        const activeParticleCount = isVRDevice ? pc_params.count : vr_params.count;
+        console.log(`Using ${activeParticleCount} particles for ${isVRDevice ? 'VR' : 'PC'} mode.`);
+        
+        // === 基本設定 ===
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000000, 50, 300);
+        
+        const camera = new THREE.PerspectiveCamera(
+            75, 
+            window.innerWidth / window.innerHeight, 
+            0.1, 
+            1000
+        );
+        camera.position.set(0, 1.6, 5);
+        camera.lookAt(0, 0, 0);
+        
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            alpha: true 
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.xr.enabled = true; // WebXRを有効化
+        document.body.appendChild(renderer.domElement);
+        
+        // === VRサポートチェック ===
+        const vrStatusElement = document.getElementById('vrStatus');
+        const customVRButton = document.getElementById('vrButton');
+        
+        if ('xr' in navigator) {
+            navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                if (supported) {
+                    vrStatusElement.textContent = 'VR Ready';
+                    vrStatusElement.style.color = '#00ff00';
+                    
+                    // カスタムVRボタンの設定
+                    customVRButton.addEventListener('click', async () => {
+                        const sessionInit = {
+                            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+                        };
+                        
+                        try {
+                            const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                            renderer.xr.setSession(session);
+                            
+                            customVRButton.textContent = 'Exit VR';
+                            
+                            session.addEventListener('end', () => {
+                                customVRButton.textContent = 'Enter VR';
+                            });
+                        } catch (e) {
+                            console.error('VRセッションの開始に失敗:', e);
+                        }
+                    });
+                } else {
+                    vrStatusElement.textContent = 'VR Not Supported';
+                    vrStatusElement.style.color = '#ff0000';
+                    customVRButton.disabled = true;
+                }
+            });
+        } else {
+            customVRButton.disabled = true;
+        }
+        
+        // === VR用のカメラグループ（プレイヤーの位置を管理） ===
+        const cameraGroup = new THREE.Group();
+        cameraGroup.add(camera);
+        scene.add(cameraGroup);
+        
+        // === ライティング ===
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xffffff, 1);
+        pointLight.position.set(50, 50, 50);
+        scene.add(pointLight);
+        
+        // VR空間用の追加ライト
+        const vrLight = new THREE.PointLight(0x87cefa, 0.5);
+        cameraGroup.add(vrLight); // カメラグループに追加してプレイヤーと一緒に移動
+        
+        // === InstancedMesh の作成 ===
+        const geometry = new THREE.SphereGeometry(params.particleSize, 8, 6);
+        const material = new THREE.MeshPhongMaterial({
+            color: params.color,
+            emissive: params.color,
+            emissiveIntensity: 0.3,
+            shininess: 100
+        });
+        
+        const instancedMesh = new THREE.InstancedMesh(geometry, material,activeParticleCount);
+        
+        // パーティクルの初期位置を保存する配列
+        const particlePositions = [];
+        
+        // 各インスタンスの初期位置を設定
+        const dummy = new THREE.Object3D();
+        
+        for (let i = 0; i < activeParticleCount; i++) {
+            const x = (Math.random() - 0.5) * params.spread;
+            const z = (Math.random() - 0.5) * params.spread;
+            
+            particlePositions.push({ x, z });
+            
+            dummy.position.set(x, 0, z);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            
+            instancedMesh.setMatrixAt(i, dummy.matrix);
+        }
+        
+        instancedMesh.instanceMatrix.needsUpdate = true;
+        scene.add(instancedMesh);
+        
+        // === VR用の地面（参照用） ===
+        const floorGeometry = new THREE.PlaneGeometry(200, 200);
+        const floorMaterial = new THREE.MeshBasicMaterial({
+            color: 0x001122,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -10;
+        scene.add(floor);
+        
+
+        // === VRコントローラーの基本セットアップ ===
+        // コントローラー1（右手）
+        const controller1 = renderer.xr.getController(0);
+        cameraGroup.add(controller1);
+        
+        // コントローラー2（左手）
+        const controller2 = renderer.xr.getController(1);
+        cameraGroup.add(controller2);
+        
+        // シンプルなコントローラービジュアル
+        const controllerGeometry = new THREE.CylinderGeometry(0.01, 0.02, 0.08, 6);
+        const controllerMaterial = new THREE.MeshBasicMaterial({ color: 0x87cefa });
+        
+        const controllerMesh1 = new THREE.Mesh(controllerGeometry, controllerMaterial);
+        const controllerMesh2 = new THREE.Mesh(controllerGeometry, controllerMaterial);
+        
+        controller1.add(controllerMesh1);
+        controller2.add(controllerMesh2);
+        
+        // レイキャスト用のライン
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, -1)
+        ]);
+        
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0x87cefa,
+            linewidth: 2
+        });
+        
+        const line1 = new THREE.Line(lineGeometry, lineMaterial);
+        line1.scale.z = 5;
+        controller1.add(line1);
+        
+        const line2 = new THREE.Line(lineGeometry.clone(), lineMaterial.clone());
+        line2.scale.z = 5;
+        controller2.add(line2);
+        
+        // === PC用のWASD移動制御 ===
+        const moveSpeed = 0.1;
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            shift: false
+        };
+        
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = true;
+            }
+            if (key === 'shift') {
+                keys.shift = true;
+            }
+        });
+        
+        document.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) {
+                keys[key] = false;
+            }
+            if (key === 'shift') {
+                keys.shift = false;
+            }
+        });
+        
+        function updateCameraMovement() {
+            if (!renderer.xr.isPresenting) {
+                const speed = keys.shift ? moveSpeed * 2 : moveSpeed;
+                
+                // カメラの向きを基準に移動方向を計算
+                const forward = new THREE.Vector3();
+                camera.getWorldDirection(forward);
+                forward.y = 0; // Y軸の移動を無効化（地面に平行に移動）
+                forward.normalize();
+                
+                const right = new THREE.Vector3();
+                right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+                
+                if (keys.w) {
+                    cameraGroup.position.addScaledVector(forward, speed);
+                }
+                if (keys.s) {
+                    cameraGroup.position.addScaledVector(forward, -speed);
+                }
+                if (keys.a) {
+                    cameraGroup.position.addScaledVector(right, -speed);
+                }
+                if (keys.d) {
+                    cameraGroup.position.addScaledVector(right, speed);
+                }
+            }
+        }
+        
+        // === VR用のテレポート機能 ===
+        const teleportGeometry = new THREE.RingGeometry(0.5, 0.8, 32);
+        const teleportMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.5
+        });
+        const teleportMarker = new THREE.Mesh(teleportGeometry, teleportMaterial);
+        teleportMarker.rotation.x = -Math.PI / 2;
+        teleportMarker.visible = false;
+        scene.add(teleportMarker);
+        
+        // テレポート用のレイキャスター
+        const raycaster = new THREE.Raycaster();
+        const tempMatrix = new THREE.Matrix4();
+        
+        // テレポート可能な床を作成（見えない）
+        const teleportFloorGeometry = new THREE.PlaneGeometry(300, 300);
+        const teleportFloorMaterial = new THREE.MeshBasicMaterial({
+            visible: false
+        });
+        const teleportFloor = new THREE.Mesh(teleportFloorGeometry, teleportFloorMaterial);
+        teleportFloor.rotation.x = -Math.PI / 2;
+        teleportFloor.position.y = 0;
+        scene.add(teleportFloor);
+        
+        // テレポートのトリガー状態
+        let controller1Squeezing = false;
+        let controller2Squeezing = false;
+        
+        // コントローラーのスクイーズイベント（グリップボタン）
+        controller1.addEventListener('squeezestart', () => {
+            controller1Squeezing = true;
+        });
+        
+        controller1.addEventListener('squeezeend', () => {
+            controller1Squeezing = false;
+            // テレポート実行
+            if (teleportMarker.visible) {
+                cameraGroup.position.x = teleportMarker.position.x;
+                cameraGroup.position.z = teleportMarker.position.z;
+                teleportMarker.visible = false;
+            }
+        });
+        
+        controller2.addEventListener('squeezestart', () => {
+            controller2Squeezing = true;
+        });
+        
+        controller2.addEventListener('squeezeend', () => {
+            controller2Squeezing = false;
+            // テレポート実行
+            if (teleportMarker.visible) {
+                cameraGroup.position.x = teleportMarker.position.x;
+                cameraGroup.position.z = teleportMarker.position.z;
+                teleportMarker.visible = false;
+            }
+        });
+        
+        function updateTeleport(controller, squeezing) {
+            if (squeezing && renderer.xr.isPresenting) {
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+                
+                const intersects = raycaster.intersectObject(teleportFloor);
+                if (intersects.length > 0) {
+                    teleportMarker.position.copy(intersects[0].point);
+                    teleportMarker.position.y = 0.01; // 少し上に配置
+                    teleportMarker.visible = true;
+                } else {
+                    teleportMarker.visible = false;
+                }
+            }
+        }
+        
+        // パーティクル数を表示
+        document.getElementById('particleCount').textContent = activeParticleCount;
+        
+        // === アニメーションループ ===
+        const clock = new THREE.Clock();
+        let mouseX = 0;
+        let mouseY = 0;
+        
+        // マウス操作（非VR時）
+        document.addEventListener('mousemove', (event) => {
+            if (!renderer.xr.isPresenting) {
+                mouseX = (event.clientX / window.innerWidth) * (-1);
+            }
+        });
+        
+        // アニメーション関数
+        function animate() {
+            const time = clock.getElapsedTime() * params.speed;
+            
+            // 各パーティクルの位置を更新
+            for (let i = 0; i < activeParticleCount; i++) {
+                const pos = particlePositions[i];
+                const distance = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+                const y = params.amplitude * Math.sin(distance * params.frequency - time);
+                
+                dummy.position.set(pos.x, y, pos.z);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(i, dummy.matrix);
+            }
+            
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            
+            // PC用の移動を更新
+            updateCameraMovement();
+            
+            // VRモードでない時のカメラ制御
+            if (!renderer.xr.isPresenting) {
+                // マウスによる視点移動（位置は移動しない）
+                const targetRotationY = mouseX * Math.PI;
+                const targetRotationX = -mouseY * Math.PI * 0.5;
+                
+                camera.rotation.y += (targetRotationY - camera.rotation.y) * 0.05;
+                camera.rotation.x += (targetRotationX - camera.rotation.x) * 0.05;
+            } else {
+                // VRモード時のテレポート更新
+                updateTeleport(controller1, controller1Squeezing);
+                updateTeleport(controller2, controller2Squeezing);
+            }
+        }
+        
+        // WebXR用のアニメーションループ
+        renderer.setAnimationLoop(function() {
+            animate();
+            renderer.render(scene, camera);
+        });
+        
+        // === ウィンドウリサイズ対応 ===
+        window.addEventListener('resize', () => {
+            if (!renderer.xr.isPresenting) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+        
+        // コントローラーのイベント
+        controller1.addEventListener('selectstart', () => {
+            params.speed = params.speed === 2.0 ? 0.5 : 2.0; // 速度切り替え
+        });
+        
+        controller2.addEventListener('selectstart', () => {
+            params.amplitude = params.amplitude === 10 ? 20 : 10; // 振幅切り替え
+        });
+    </script>
+</body>
+</html>
