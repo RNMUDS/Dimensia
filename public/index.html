@@ -112,12 +112,23 @@
             color: 0x87cefa          // パーティクルの色（ライトスカイブルー）
         };
 
-        // === デバイスごとにparticle数を調整 ===
-        // デバイスタイプの検出とパーティクル数の決定
-        const isMobileVR = /Quest|Android/i.test(navigator.userAgent);
-        const isVRDevice = 'xr' in navigator && isMobileVR;
-        const activeParticleCount = isVRDevice ? pc_params.count : vr_params.count;
-        console.log(`Using ${activeParticleCount} particles for ${isVRDevice ? 'VR' : 'PC'} mode.`);
+        // === デバイスごとのパラメータ選択 ===
+        let params = pc_params; // デフォルトはPC用パラメータ
+        let isVRMode = false;
+        
+        // VRセッション開始時にパラメータを切り替える関数
+        function switchToVRParams() {
+            params = vr_params;
+            isVRMode = true;
+            recreateParticles();
+        }
+        
+        // PC用パラメータに戻す関数
+        function switchToPCParams() {
+            params = pc_params;
+            isVRMode = false;
+            recreateParticles();
+        }
         
         // === 基本設定 ===
         const scene = new THREE.Scene();
@@ -163,8 +174,13 @@
                             
                             customVRButton.textContent = 'Exit VR';
                             
+                            // VRモードに入ったらVR用パラメータに切り替え
+                            switchToVRParams();
+                            
                             session.addEventListener('end', () => {
                                 customVRButton.textContent = 'Enter VR';
+                                // VRモードを終了したらPC用パラメータに戻す
+                                switchToPCParams();
                             });
                         } catch (e) {
                             console.error('VRセッションの開始に失敗:', e);
@@ -198,37 +214,59 @@
         cameraGroup.add(vrLight); // カメラグループに追加してプレイヤーと一緒に移動
         
         // === InstancedMesh の作成 ===
-        const geometry = new THREE.SphereGeometry(params.particleSize, 8, 6);
-        const material = new THREE.MeshPhongMaterial({
-            color: params.color,
-            emissive: params.color,
-            emissiveIntensity: 0.3,
-            shininess: 100
-        });
-        
-        const instancedMesh = new THREE.InstancedMesh(geometry, material,activeParticleCount);
-        
-        // パーティクルの初期位置を保存する配列
-        const particlePositions = [];
-        
-        // 各インスタンスの初期位置を設定
+        let geometry;
+        let material;
+        let instancedMesh;
+        let particlePositions = [];
         const dummy = new THREE.Object3D();
         
-        for (let i = 0; i < activeParticleCount; i++) {
-            const x = (Math.random() - 0.5) * params.spread;
-            const z = (Math.random() - 0.5) * params.spread;
+        // パーティクルを作成/再作成する関数
+        function recreateParticles() {
+            // 既存のメッシュがあれば削除
+            if (instancedMesh) {
+                scene.remove(instancedMesh);
+                geometry.dispose();
+                material.dispose();
+            }
             
-            particlePositions.push({ x, z });
+            // 新しいジオメトリとマテリアルを作成
+            geometry = new THREE.SphereGeometry(params.particleSize, 8, 6);
+            material = new THREE.MeshPhongMaterial({
+                color: params.color,
+                emissive: params.color,
+                emissiveIntensity: 0.3,
+                shininess: 100
+            });
             
-            dummy.position.set(x, 0, z);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
+            // 新しいInstancedMeshを作成
+            instancedMesh = new THREE.InstancedMesh(geometry, material, params.count);
             
-            instancedMesh.setMatrixAt(i, dummy.matrix);
+            // パーティクルの位置をリセット
+            particlePositions = [];
+            
+            // 各インスタンスの初期位置を設定
+            for (let i = 0; i < params.count; i++) {
+                const x = (Math.random() - 0.5) * params.spread;
+                const z = (Math.random() - 0.5) * params.spread;
+                
+                particlePositions.push({ x, z });
+                
+                dummy.position.set(x, 0, z);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                
+                instancedMesh.setMatrixAt(i, dummy.matrix);
+            }
+            
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            scene.add(instancedMesh);
+            
+            // パーティクル数表示を更新
+            document.getElementById('particleCount').textContent = params.count;
         }
         
-        instancedMesh.instanceMatrix.needsUpdate = true;
-        scene.add(instancedMesh);
+        // 初回のパーティクル作成
+        recreateParticles();
         
         // === VR用の地面（参照用） ===
         const floorGeometry = new THREE.PlaneGeometry(200, 200);
@@ -417,8 +455,7 @@
             }
         }
         
-        // パーティクル数を表示
-        document.getElementById('particleCount').textContent = activeParticleCount;
+        // パーティクル数の表示は recreateParticles() 内で行われるため、この行は削除
         
         // === アニメーションループ ===
         const clock = new THREE.Clock();
@@ -437,7 +474,7 @@
             const time = clock.getElapsedTime() * params.speed;
             
             // 各パーティクルの位置を更新
-            for (let i = 0; i < activeParticleCount; i++) {
+            for (let i = 0; i < params.count; i++) {
                 const pos = particlePositions[i];
                 const distance = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
                 const y = params.amplitude * Math.sin(distance * params.frequency - time);
