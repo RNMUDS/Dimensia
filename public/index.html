@@ -305,10 +305,11 @@
             emissiveIntensity: 0.1
         });
         
-        // 関節を接続する線のマテリアル
-        const boneMaterial = new THREE.LineBasicMaterial({
+        // 関節を接続する線（シリンダー）のマテリアル
+        const boneMaterial = new THREE.MeshPhongMaterial({
             color: 0xffdbac,
-            linewidth: 2
+            emissive: 0xffdbac,
+            emissiveIntensity: 0.1
         });
         
         // 各関節用のメッシュとボーンラインを作成
@@ -350,34 +351,7 @@
             ['pinky-finger-phalanx-distal', 'pinky-finger-tip']
         ];
         
-        // シンプルなコントローラービジュアル
-        const controllerGeometry = new THREE.CylinderGeometry(0.01, 0.02, 0.08, 6);
-        const controllerMaterial = new THREE.MeshBasicMaterial({ color: 0x87cefa });
-        
-        const controllerMesh1 = new THREE.Mesh(controllerGeometry, controllerMaterial);
-        const controllerMesh2 = new THREE.Mesh(controllerGeometry, controllerMaterial);
-        
-        controller1.add(controllerMesh1);
-        controller2.add(controllerMesh2);
-        
-        // レイキャスト用のライン
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, 0, -1)
-        ]);
-        
-        const lineMaterial = new THREE.LineBasicMaterial({
-            color: 0x87cefa,
-            linewidth: 2
-        });
-        
-        const line1 = new THREE.Line(lineGeometry, lineMaterial);
-        line1.scale.z = 5;
-        controller1.add(line1);
-        
-        const line2 = new THREE.Line(lineGeometry.clone(), lineMaterial.clone());
-        line2.scale.z = 5;
-        controller2.add(line2);
+        // コントローラーのビジュアルは不要（ハンドトラッキングを使用するため）
         
         // === PC用のWASD移動制御 ===
         const moveSpeed = 0.1;
@@ -454,6 +428,16 @@
         const raycaster = new THREE.Raycaster();
         const tempMatrix = new THREE.Matrix4();
         
+        // テレポート用の放物線
+        const arcGeometry = new THREE.BufferGeometry();
+        const arcMaterial = new THREE.LineBasicMaterial({
+            color: 0x00ff00,
+            linewidth: 3
+        });
+        const teleportArc = new THREE.Line(arcGeometry, arcMaterial);
+        teleportArc.visible = false;
+        scene.add(teleportArc);
+        
         // テレポート可能な床を作成（見えない）
         const teleportFloorGeometry = new THREE.PlaneGeometry(300, 300);
         const teleportFloorMaterial = new THREE.MeshBasicMaterial({
@@ -514,6 +498,80 @@
             }
         }
         
+        // ハンドトラッキングでのピンチ状態を追跡
+        let hand1Pinching = false;
+        let hand2Pinching = false;
+        
+        // ピンチ検出関数
+        function isPinching(hand) {
+            if (!hand.joints || !hand.joints['thumb-tip'] || !hand.joints['index-finger-tip']) {
+                return false;
+            }
+            
+            const thumbTip = new THREE.Vector3();
+            const indexTip = new THREE.Vector3();
+            
+            hand.joints['thumb-tip'].getWorldPosition(thumbTip);
+            hand.joints['index-finger-tip'].getWorldPosition(indexTip);
+            
+            const distance = thumbTip.distanceTo(indexTip);
+            return distance < 0.02; // 2cm以下でピンチと判定
+        }
+        
+        // ハンドトラッキングでのテレポート更新
+        function updateHandTeleport(hand, pinching) {
+            if (pinching && renderer.xr.isPresenting && hand.joints && hand.joints['index-finger-metacarpal']) {
+                // 人差し指の付け根から前方にレイを飛ばす
+                const origin = new THREE.Vector3();
+                const direction = new THREE.Vector3();
+                const quaternion = new THREE.Quaternion();
+                
+                hand.joints['index-finger-metacarpal'].getWorldPosition(origin);
+                hand.joints['index-finger-metacarpal'].getWorldQuaternion(quaternion);
+                
+                // 手のひらの向きに基づいて前方向を計算
+                direction.set(0, 0, -1).applyQuaternion(quaternion);
+                
+                // レイキャスターを設定
+                raycaster.set(origin, direction);
+                
+                const intersects = raycaster.intersectObject(teleportFloor);
+                if (intersects.length > 0) {
+                    teleportMarker.position.copy(intersects[0].point);
+                    teleportMarker.position.y = 0.01;
+                    teleportMarker.visible = true;
+                    
+                    // 放物線を描画
+                    const points = [];
+                    const segments = 30;
+                    for (let i = 0; i <= segments; i++) {
+                        const t = i / segments;
+                        const point = new THREE.Vector3();
+                        point.lerpVectors(origin, intersects[0].point, t);
+                        point.y += Math.sin(t * Math.PI) * 0.5; // 放物線の高さ
+                        points.push(point);
+                    }
+                    
+                    const positions = new Float32Array(points.length * 3);
+                    for (let i = 0; i < points.length; i++) {
+                        positions[i * 3] = points[i].x;
+                        positions[i * 3 + 1] = points[i].y;
+                        positions[i * 3 + 2] = points[i].z;
+                    }
+                    
+                    arcGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                    teleportArc.visible = true;
+                } else {
+                    teleportMarker.visible = false;
+                    teleportArc.visible = false;
+                }
+            } else {
+                if (!pinching) {
+                    teleportArc.visible = false;
+                }
+            }
+        }
+        
         // ハンドトラッキングの更新関数
         function updateHandTracking(hand, jointMeshes, boneLines) {
             if (renderer.xr.isPresenting && hand.joints) {
@@ -548,31 +606,42 @@
                     const [joint1Name, joint2Name] = connection;
                     
                     if (hand.joints[joint1Name] && hand.joints[joint2Name]) {
-                        // ラインがなければ作成
+                        // シリンダーがなければ作成
                         if (!boneLines[index]) {
-                            const lineGeometry = new THREE.BufferGeometry();
-                            const positions = new Float32Array(6); // 2点 x 3座標
-                            lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-                            const line = new THREE.Line(lineGeometry, boneMaterial);
-                            scene.add(line);
-                            boneLines[index] = line;
+                            const cylinderGeometry = new THREE.CylinderGeometry(0.005, 0.005, 1, 8); // 半径0.005（直径0.01）
+                            const cylinder = new THREE.Mesh(cylinderGeometry, boneMaterial);
+                            scene.add(cylinder);
+                            boneLines[index] = cylinder;
                         }
                         
-                        // ラインの位置を更新
+                        // シリンダーの位置と回転を更新
                         const pos1 = new THREE.Vector3();
                         const pos2 = new THREE.Vector3();
                         hand.joints[joint1Name].getWorldPosition(pos1);
                         hand.joints[joint2Name].getWorldPosition(pos2);
                         
-                        const positions = boneLines[index].geometry.attributes.position.array;
-                        positions[0] = pos1.x;
-                        positions[1] = pos1.y;
-                        positions[2] = pos1.z;
-                        positions[3] = pos2.x;
-                        positions[4] = pos2.y;
-                        positions[5] = pos2.z;
-                        boneLines[index].geometry.attributes.position.needsUpdate = true;
+                        // 中点を計算
+                        const midpoint = new THREE.Vector3();
+                        midpoint.addVectors(pos1, pos2).multiplyScalar(0.5);
+                        
+                        // 距離を計算
+                        const distance = pos1.distanceTo(pos2);
+                        
+                        // シリンダーの位置を中点に設定
+                        boneLines[index].position.copy(midpoint);
+                        
+                        // シリンダーの長さを調整
+                        boneLines[index].scale.y = distance;
+                        
+                        // シリンダーを2点間の方向に回転
+                        const direction = new THREE.Vector3();
+                        direction.subVectors(pos2, pos1).normalize();
+                        const quaternion = new THREE.Quaternion();
+                        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+                        boneLines[index].quaternion.copy(quaternion);
+                        
                         boneLines[index].visible = true;
+                        boneLines[index].frustumCulled = false; // カリングを無効化
                     }
                 });
             } else {
@@ -582,8 +651,8 @@
                         jointMeshes[jointName].visible = false;
                     }
                 }
-                boneLines.forEach(line => {
-                    if (line) line.visible = false;
+                boneLines.forEach(cylinder => {
+                    if (cylinder) cylinder.visible = false;
                 });
             }
         }
@@ -644,6 +713,63 @@
                 // ハンドトラッキングの更新
                 updateHandTracking(hand1, jointMeshes1, boneLines1);
                 updateHandTracking(hand2, jointMeshes2, boneLines2);
+                
+                // ピンチ状態の更新とテレポート処理
+                const wasPinching1 = hand1Pinching;
+                const wasPinching2 = hand2Pinching;
+                
+                hand1Pinching = isPinching(hand1);
+                hand2Pinching = isPinching(hand2);
+                
+                // ハンド1のテレポート処理
+                if (hand1Pinching) {
+                    updateHandTeleport(hand1, true);
+                } else if (wasPinching1 && !hand1Pinching && teleportMarker.visible) {
+                    // ピンチを離したときにテレポート実行
+                    cameraGroup.position.x = teleportMarker.position.x;
+                    cameraGroup.position.z = teleportMarker.position.z;
+                    teleportMarker.visible = false;
+                    teleportArc.visible = false;
+                    
+                    // テレポート後にボーンラインの可視性を強制的に更新
+                    boneLines1.forEach(cylinder => {
+                        if (cylinder) {
+                            cylinder.visible = true;
+                            cylinder.frustumCulled = false;
+                        }
+                    });
+                    boneLines2.forEach(cylinder => {
+                        if (cylinder) {
+                            cylinder.visible = true;
+                            cylinder.frustumCulled = false;
+                        }
+                    });
+                }
+                
+                // ハンド2のテレポート処理
+                if (hand2Pinching) {
+                    updateHandTeleport(hand2, true);
+                } else if (wasPinching2 && !hand2Pinching && teleportMarker.visible) {
+                    // ピンチを離したときにテレポート実行
+                    cameraGroup.position.x = teleportMarker.position.x;
+                    cameraGroup.position.z = teleportMarker.position.z;
+                    teleportMarker.visible = false;
+                    teleportArc.visible = false;
+                    
+                    // テレポート後にボーンラインの可視性を強制的に更新
+                    boneLines1.forEach(cylinder => {
+                        if (cylinder) {
+                            cylinder.visible = true;
+                            cylinder.frustumCulled = false;
+                        }
+                    });
+                    boneLines2.forEach(cylinder => {
+                        if (cylinder) {
+                            cylinder.visible = true;
+                            cylinder.frustumCulled = false;
+                        }
+                    });
+                }
             }
         }
         
