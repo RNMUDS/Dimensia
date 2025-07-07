@@ -1,6 +1,5 @@
 // main.js
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ParticleSystem } from './ParticleSystem.js';
 
 // === 基本設定 ===
@@ -213,139 +212,6 @@ const hand1 = renderer.xr.getHand(0);
 const hand2 = renderer.xr.getHand(1);
 cameraGroup.add(hand1);
 cameraGroup.add(hand2);
-
-// GLBハンドモデルのロード
-const gltfLoader = new GLTFLoader();
-let rightHandModel = null;
-let leftHandModel = null;
-let rightHandBones = {};
-let leftHandBones = {};
-let useGLBModels = true; // GLBモデルを使用するかどうかのフラグ
-
-// WebXRの関節名とGLBモデルのボーン名のマッピング
-const jointToBoneMap = {
-    'wrist': ['Wrist', 'wrist', 'mixamorigRightHand', 'mixamorigLeftHand', 'Hand'],
-    'thumb-metacarpal': ['Thumb0', 'thumb_01', 'mixamorigRightHandThumb1', 'mixamorigLeftHandThumb1', 'Thumb_0'],
-    'thumb-phalanx-proximal': ['Thumb1', 'thumb_02', 'mixamorigRightHandThumb2', 'mixamorigLeftHandThumb2', 'Thumb_1'],
-    'thumb-phalanx-distal': ['Thumb2', 'thumb_03', 'mixamorigRightHandThumb3', 'mixamorigLeftHandThumb3', 'Thumb_2'],
-    'thumb-tip': ['Thumb3', 'thumb_04', 'mixamorigRightHandThumb4', 'mixamorigLeftHandThumb4', 'Thumb_3'],
-    'index-finger-metacarpal': ['Index0', 'index_01', 'mixamorigRightHandIndex1', 'mixamorigLeftHandIndex1', 'Index_0'],
-    'index-finger-phalanx-proximal': ['Index1', 'index_02', 'mixamorigRightHandIndex2', 'mixamorigLeftHandIndex2', 'Index_1'],
-    'index-finger-phalanx-intermediate': ['Index2', 'index_03', 'mixamorigRightHandIndex3', 'mixamorigLeftHandIndex3', 'Index_2'],
-    'index-finger-phalanx-distal': ['Index3', 'index_04', 'mixamorigRightHandIndex4', 'mixamorigLeftHandIndex4', 'Index_3'],
-    'index-finger-tip': ['Index4', 'index_05', 'mixamorigRightHandIndex5', 'mixamorigLeftHandIndex5', 'Index_4'],
-    'middle-finger-metacarpal': ['Middle0', 'middle_01', 'mixamorigRightHandMiddle1', 'mixamorigLeftHandMiddle1', 'Middle_0'],
-    'middle-finger-phalanx-proximal': ['Middle1', 'middle_02', 'mixamorigRightHandMiddle2', 'mixamorigLeftHandMiddle2', 'Middle_1'],
-    'middle-finger-phalanx-intermediate': ['Middle2', 'middle_03', 'mixamorigRightHandMiddle3', 'mixamorigLeftHandMiddle3', 'Middle_2'],
-    'middle-finger-phalanx-distal': ['Middle3', 'middle_04', 'mixamorigRightHandMiddle4', 'mixamorigLeftHandMiddle4', 'Middle_3'],
-    'middle-finger-tip': ['Middle4', 'middle_05', 'mixamorigRightHandMiddle5', 'mixamorigLeftHandMiddle5', 'Middle_4'],
-    'ring-finger-metacarpal': ['Ring0', 'ring_01', 'mixamorigRightHandRing1', 'mixamorigLeftHandRing1', 'Ring_0'],
-    'ring-finger-phalanx-proximal': ['Ring1', 'ring_02', 'mixamorigRightHandRing2', 'mixamorigLeftHandRing2', 'Ring_1'],
-    'ring-finger-phalanx-intermediate': ['Ring2', 'ring_03', 'mixamorigRightHandRing3', 'mixamorigLeftHandRing3', 'Ring_2'],
-    'ring-finger-phalanx-distal': ['Ring3', 'ring_04', 'mixamorigRightHandRing4', 'mixamorigLeftHandRing4', 'Ring_3'],
-    'ring-finger-tip': ['Ring4', 'ring_05', 'mixamorigRightHandRing5', 'mixamorigLeftHandRing5', 'Ring_4'],
-    'pinky-finger-metacarpal': ['Pinky0', 'pinky_01', 'mixamorigRightHandPinky1', 'mixamorigLeftHandPinky1', 'Little_0'],
-    'pinky-finger-phalanx-proximal': ['Pinky1', 'pinky_02', 'mixamorigRightHandPinky2', 'mixamorigLeftHandPinky2', 'Little_1'],
-    'pinky-finger-phalanx-intermediate': ['Pinky2', 'pinky_03', 'mixamorigRightHandPinky3', 'mixamorigLeftHandPinky3', 'Little_2'],
-    'pinky-finger-phalanx-distal': ['Pinky3', 'pinky_04', 'mixamorigRightHandPinky4', 'mixamorigLeftHandPinky4', 'Little_3'],
-    'pinky-finger-tip': ['Pinky4', 'pinky_05', 'mixamorigRightHandPinky5', 'mixamorigLeftHandPinky5', 'Little_4']
-};
-
-// GLBモデルからボーンを抽出
-function extractBones(model, isRight) {
-    const bones = {};
-    const allBones = [];
-    
-    // 全てのボーンを収集
-    model.traverse((child) => {
-        if (child.isBone) {
-            allBones.push(child);
-            console.log('Found bone:', child.name);
-        }
-    });
-    
-    // ボーン名をWebXRの関節名にマッピング
-    for (const [jointName, boneNames] of Object.entries(jointToBoneMap)) {
-        for (const boneName of boneNames) {
-            const bone = allBones.find(b => 
-                b.name.toLowerCase().includes(boneName.toLowerCase()) ||
-                boneName.toLowerCase().includes(b.name.toLowerCase())
-            );
-            if (bone) {
-                bones[jointName] = bone;
-                console.log(`Mapped ${jointName} to bone ${bone.name}`);
-                break;
-            }
-        }
-    }
-    
-    // ボーンが見つからない場合は、モデル全体を移動
-    if (Object.keys(bones).length === 0) {
-        console.log('No bones found, will move entire model');
-    }
-    
-    return bones;
-}
-
-// 右手のGLBモデルをロード
-gltfLoader.load('right.glb', (gltf) => {
-    rightHandModel = gltf.scene;
-    rightHandModel.visible = false;
-    
-    // ボーンを抽出
-    rightHandBones = extractBones(rightHandModel, true);
-    
-    rightHandModel.traverse((child) => {
-        if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            // スキニングがある場合は更新を有効化
-            if (child.isSkinnedMesh) {
-                child.frustumCulled = false;
-            }
-            // マテリアルの調整
-            if (child.material) {
-                child.material.side = THREE.DoubleSide;
-            }
-        }
-    });
-    scene.add(rightHandModel);
-    console.log('Right hand GLB model loaded with bones:', Object.keys(rightHandBones).length);
-}, (progress) => {
-    console.log('Loading right hand:', (progress.loaded / progress.total * 100) + '%');
-}, (error) => {
-    console.error('Error loading right hand model:', error);
-});
-
-// 左手のGLBモデルをロード
-gltfLoader.load('left.glb', (gltf) => {
-    leftHandModel = gltf.scene;
-    leftHandModel.visible = false;
-    
-    // ボーンを抽出
-    leftHandBones = extractBones(leftHandModel, false);
-    
-    leftHandModel.traverse((child) => {
-        if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            // スキニングがある場合は更新を有効化
-            if (child.isSkinnedMesh) {
-                child.frustumCulled = false;
-            }
-            // マテリアルの調整
-            if (child.material) {
-                child.material.side = THREE.DoubleSide;
-            }
-        }
-    });
-    scene.add(leftHandModel);
-    console.log('Left hand GLB model loaded with bones:', Object.keys(leftHandBones).length);
-}, (progress) => {
-    console.log('Loading left hand:', (progress.loaded / progress.total * 100) + '%');
-}, (error) => {
-    console.error('Error loading left hand model:', error);
-});
 
 // === リアルな手のマテリアル設定 ===
 // 肌のマテリアル（サブサーフェススキャッタリング風）
@@ -560,65 +426,8 @@ initializeHandMeshes(hand1, handData1);
 initializeHandMeshes(hand2, handData2);
 
 // ハンドトラッキングの更新関数
-function updateHandTracking(hand, jointMeshes, boneLines, handData, handModel, isRightHand) {
+function updateHandTracking(hand, jointMeshes, boneLines, handData) {
     if (renderer.xr.isPresenting && hand.joints) {
-        // GLBモデルが利用可能かつ有効な場合
-        if (useGLBModels && handModel) {
-            const wristJoint = hand.joints['wrist'];
-            if (wristJoint) {
-                const position = new THREE.Vector3();
-                const quaternion = new THREE.Quaternion();
-                const scale = new THREE.Vector3();
-                
-                wristJoint.matrixWorld.decompose(position, quaternion, scale);
-                
-                // GLBモデルを手首の位置に配置
-                handModel.position.copy(position);
-                handModel.quaternion.copy(quaternion);
-                handModel.scale.setScalar(1);
-                handModel.visible = true;
-                
-                // ボーンがある場合は更新を試みる
-                const handBones = isRightHand ? rightHandBones : leftHandBones;
-                if (Object.keys(handBones).length > 0) {
-                    // 全ての関節の位置を更新
-                    for (const [jointName, bone] of Object.entries(handBones)) {
-                        const joint = hand.joints[jointName];
-                        if (joint && bone && joint !== wristJoint) {
-                            const jointPos = new THREE.Vector3();
-                            const jointQuat = new THREE.Quaternion();
-                            
-                            joint.matrixWorld.decompose(jointPos, jointQuat, new THREE.Vector3());
-                            
-                            // 手首からの相対位置を計算
-                            const relativePos = jointPos.clone().sub(position);
-                            relativePos.applyQuaternion(quaternion.clone().invert());
-                            
-                            // ボーンのローカル位置を設定
-                            bone.position.copy(relativePos);
-                            
-                            // 相対回転を計算
-                            const relativeQuat = jointQuat.clone().premultiply(quaternion.clone().invert());
-                            bone.quaternion.copy(relativeQuat);
-                        }
-                    }
-                }
-            }
-            
-            // GLBモデルを使用する場合は、デフォルトのメッシュを非表示に
-            for (const jointName in jointMeshes) {
-                if (jointMeshes[jointName]) {
-                    jointMeshes[jointName].visible = false;
-                }
-            }
-            boneLines.forEach(cylinder => {
-                if (cylinder) cylinder.visible = false;
-            });
-            if (handData && handData.handBack) {
-                handData.handBack.visible = false;
-            }
-            return; // GLBモデルを使用する場合はここで終了
-        }
         // 手の甲の位置を更新
         if (handData && handData.handBack && hand.joints['wrist']) {
             const wristPos = new THREE.Vector3();
@@ -795,10 +604,6 @@ function updateHandTracking(hand, jointMeshes, boneLines, handData, handModel, i
         });
         if (handData && handData.handBack) {
             handData.handBack.visible = false;
-        }
-        // GLBモデルも非表示に
-        if (handModel) {
-            handModel.visible = false;
         }
     }
 }
@@ -989,8 +794,8 @@ function animate() {
         updateTeleport(controller2, controller2Squeezing);
         
         // ハンドトラッキングの更新
-        updateHandTracking(hand1, jointMeshes1, boneLines1, handData1, rightHandModel, true);
-        updateHandTracking(hand2, jointMeshes2, boneLines2, handData2, leftHandModel, false);
+        updateHandTracking(hand1, jointMeshes1, boneLines1, handData1);
+        updateHandTracking(hand2, jointMeshes2, boneLines2, handData2);
         
         // ピンチ状態の更新とテレポート処理
         const wasPinching1 = hand1Pinching;
@@ -1051,8 +856,5 @@ window.addEventListener('resize', () => {
         boneLines2.forEach(line => {
             if (line) line.visible = false;
         });
-        // GLBモデルも非表示に
-        if (rightHandModel) rightHandModel.visible = false;
-        if (leftHandModel) leftHandModel.visible = false;
     }
 });
