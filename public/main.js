@@ -1,5 +1,6 @@
 // main.js
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { ParticleSystem } from './ParticleSystem.js';
 
 // === 基本設定 ===
@@ -18,9 +19,18 @@ pointLight.position.set(50, 50, 50);
 scene.add(pointLight);
 
 // ディレクショナルライト（手に陰影をつけるため）
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
 directionalLight.position.set(10, 20, 10);
 directionalLight.lookAt(0, 0, 0);
+directionalLight.castShadow = true;
+directionalLight.shadow.camera.near = 0.1;
+directionalLight.shadow.camera.far = 50;
+directionalLight.shadow.camera.left = -5;
+directionalLight.shadow.camera.right = 5;
+directionalLight.shadow.camera.top = 5;
+directionalLight.shadow.camera.bottom = -5;
+directionalLight.shadow.mapSize.width = 2048;
+directionalLight.shadow.mapSize.height = 2048;
 scene.add(directionalLight);
 
 // 補助的なディレクショナルライト（反対側から）
@@ -63,6 +73,8 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.xr.enabled = true; // WebXRを有効化
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 const clock = new THREE.Clock();
@@ -201,6 +213,58 @@ const hand1 = renderer.xr.getHand(0);
 const hand2 = renderer.xr.getHand(1);
 cameraGroup.add(hand1);
 cameraGroup.add(hand2);
+
+// GLBハンドモデルのロード
+const gltfLoader = new GLTFLoader();
+let rightHandModel = null;
+let leftHandModel = null;
+let useGLBModels = true; // GLBモデルを使用するかどうかのフラグ
+
+// 右手のGLBモデルをロード
+gltfLoader.load('right.glb', (gltf) => {
+    rightHandModel = gltf.scene;
+    rightHandModel.visible = false;
+    rightHandModel.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            // マテリアルの調整
+            if (child.material) {
+                child.material.side = THREE.DoubleSide;
+            }
+        }
+    });
+    scene.add(rightHandModel);
+    console.log('Right hand GLB model loaded');
+}, (progress) => {
+    console.log('Loading right hand:', (progress.loaded / progress.total * 100) + '%');
+}, (error) => {
+    console.error('Error loading right hand model:', error);
+    useGLBModels = false; // ロード失敗時はデフォルトメッシュを使用
+});
+
+// 左手のGLBモデルをロード
+gltfLoader.load('left.glb', (gltf) => {
+    leftHandModel = gltf.scene;
+    leftHandModel.visible = false;
+    leftHandModel.traverse((child) => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            // マテリアルの調整
+            if (child.material) {
+                child.material.side = THREE.DoubleSide;
+            }
+        }
+    });
+    scene.add(leftHandModel);
+    console.log('Left hand GLB model loaded');
+}, (progress) => {
+    console.log('Loading left hand:', (progress.loaded / progress.total * 100) + '%');
+}, (error) => {
+    console.error('Error loading left hand model:', error);
+    useGLBModels = false; // ロード失敗時はデフォルトメッシュを使用
+});
 
 // === リアルな手のマテリアル設定 ===
 // 肌のマテリアル（サブサーフェススキャッタリング風）
@@ -415,8 +479,38 @@ initializeHandMeshes(hand1, handData1);
 initializeHandMeshes(hand2, handData2);
 
 // ハンドトラッキングの更新関数
-function updateHandTracking(hand, jointMeshes, boneLines, handData) {
+function updateHandTracking(hand, jointMeshes, boneLines, handData, handModel, isRightHand) {
     if (renderer.xr.isPresenting && hand.joints) {
+        // GLBモデルが利用可能かつ有効な場合
+        if (useGLBModels && handModel && hand.joints['wrist']) {
+            const wristJoint = hand.joints['wrist'];
+            if (wristJoint) {
+                const position = new THREE.Vector3();
+                const quaternion = new THREE.Quaternion();
+                const scale = new THREE.Vector3();
+                
+                wristJoint.matrixWorld.decompose(position, quaternion, scale);
+                
+                handModel.position.copy(position);
+                handModel.quaternion.copy(quaternion);
+                handModel.scale.setScalar(1); // スケールを固定
+                handModel.visible = true;
+                
+                // GLBモデルを使用する場合は、デフォルトのメッシュを非表示に
+                for (const jointName in jointMeshes) {
+                    if (jointMeshes[jointName]) {
+                        jointMeshes[jointName].visible = false;
+                    }
+                }
+                boneLines.forEach(cylinder => {
+                    if (cylinder) cylinder.visible = false;
+                });
+                if (handData && handData.handBack) {
+                    handData.handBack.visible = false;
+                }
+                return; // GLBモデルを使用する場合はここで終了
+            }
+        }
         // 手の甲の位置を更新
         if (handData && handData.handBack && hand.joints['wrist']) {
             const wristPos = new THREE.Vector3();
@@ -594,6 +688,10 @@ function updateHandTracking(hand, jointMeshes, boneLines, handData) {
         if (handData && handData.handBack) {
             handData.handBack.visible = false;
         }
+        // GLBモデルも非表示に
+        if (handModel) {
+            handModel.visible = false;
+        }
     }
 }
 
@@ -641,6 +739,12 @@ scene.add(teleportMarker);
 // テレポート用のレイキャスター
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
+
+// ハンド用スポットライト（GLBモデルをより良く見せるため）
+const handSpotLight = new THREE.SpotLight(0xffffff, 0.5, 5, Math.PI / 6, 0.5, 1);
+handSpotLight.position.set(0, 2, 0);
+handSpotLight.castShadow = true;
+cameraGroup.add(handSpotLight);
 
 // テレポート可能な床を作成（見えない）
 const teleportFloorGeometry = new THREE.PlaneGeometry(300, 300);
@@ -777,8 +881,8 @@ function animate() {
         updateTeleport(controller2, controller2Squeezing);
         
         // ハンドトラッキングの更新
-        updateHandTracking(hand1, jointMeshes1, boneLines1, handData1);
-        updateHandTracking(hand2, jointMeshes2, boneLines2, handData2);
+        updateHandTracking(hand1, jointMeshes1, boneLines1, handData1, rightHandModel, true);
+        updateHandTracking(hand2, jointMeshes2, boneLines2, handData2, leftHandModel, false);
         
         // ピンチ状態の更新とテレポート処理
         const wasPinching1 = hand1Pinching;
@@ -839,5 +943,8 @@ window.addEventListener('resize', () => {
         boneLines2.forEach(line => {
             if (line) line.visible = false;
         });
+        // GLBモデルも非表示に
+        if (rightHandModel) rightHandModel.visible = false;
+        if (leftHandModel) leftHandModel.visible = false;
     }
 });

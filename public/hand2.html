@@ -1,298 +1,34 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>A-Frame Hand Tracking - v1.7.0</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-    }
-    #info {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      color: white;
-      background: rgba(0,0,0,0.7);
-      padding: 15px;
-      border-radius: 5px;
-      z-index: 100;
-      font-size: 14px;
-    }
-    #info h3 {
-      margin: 0 0 10px 0;
-    }
-    #info p {
-      margin: 5px 0;
-    }
-  </style>
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 </head>
 <body>
-  <div id="info">
-    <h3>A-Frame Hand Tracking Demo</h3>
-    <p>VRヘッドセットで手が表示されます</p>
-    <p>ピンチジェスチャー: オブジェクトを掴む</p>
-    <p id="status">Loading...</p>
-  </div>
-  
   <a-scene
-    webxr="requiredFeatures: hand-tracking; optionalFeatures: bounded-floor"
-    renderer="colorManagement: true; physicallyCorrectLights: true"
-    shadow="type: pcfsoft">
-    
-    <!-- ライティング設定 -->
-    <a-entity light="type: ambient; color: #404040; intensity: 0.5"></a-entity>
-    <a-entity light="type: directional; position: 5 10 5; color: #ffffff; intensity: 0.8; castShadow: true; shadowCameraVisible: false"></a-entity>
-    <a-entity light="type: directional; position: -5 5 -5; color: #4488ff; intensity: 0.3"></a-entity>
-    
-    <!-- 右手の設定 -->
-    <a-entity 
-      id="rightHand"
-      hand-tracking-controls="hand: right; modelStyle: mesh; modelColor: #ffdbac">
-      <!-- GLBモデルを追加 -->
-      <a-gltf-model 
-        src="#rightHandAsset" 
-        position="0 0 0"
-        rotation="0 0 0"
-        scale="1 1 1"
-        shadow="cast: true; receive: true"
-        visible="false"
-        id="rightHandModel"
-        animation-mixer>
+    webxr="optionalFeatures: hand-tracking;"
+    renderer="colorManagement: true; physicallyCorrectLights: true;"
+    environment="preset: default;"
+    shadow>
+
+    <a-entity light="type: ambient; color: #BBB"></a-entity>
+    <a-entity light="type: directional; position: -1 2 1; color: #FFF; intensity: 1.2; castShadow"></a-entity>
+
+    <a-entity hand-tracking-controls="hand: right;">
+      <a-gltf-model
+        src="right.glb"
+        shadow="cast: true">
       </a-gltf-model>
     </a-entity>
-    
-    <!-- 左手の設定 -->
-    <a-entity 
-      id="leftHand"
-      hand-tracking-controls="hand: left; modelStyle: mesh; modelColor: #ffdbac">
-      <!-- GLBモデルを追加 -->
-      <a-gltf-model 
-        src="#leftHandAsset" 
-        position="0 0 0"
-        rotation="0 0 0"
-        scale="1 1 1"
-        shadow="cast: true; receive: true"
-        visible="false"
-        id="leftHandModel"
-        animation-mixer>
+
+    <a-entity hand-tracking-controls="hand: left;">
+      <a-gltf-model
+        src="left.glb"
+        shadow="cast: true">
       </a-gltf-model>
     </a-entity>
-    
-    <!-- インタラクティブなオブジェクト -->
-    <a-box
-      id="cube1"
-      position="-0.5 1 -2"
-      rotation="0 45 0"
-      color="#4CC3D9"
-      shadow="cast: true; receive: true"
-      class="grabbable">
-    </a-box>
-    
-    <a-sphere
-      id="sphere1"
-      position="0.5 1 -2"
-      radius="0.5"
-      color="#EF2D5E"
-      shadow="cast: true; receive: true"
-      class="grabbable">
-    </a-sphere>
-    
-    <a-cylinder
-      id="cylinder1"
-      position="0 1 -3"
-      radius="0.3"
-      height="0.8"
-      color="#FFC65D"
-      shadow="cast: true; receive: true"
-      class="grabbable">
-    </a-cylinder>
-    
-    <!-- 床 -->
-    <a-plane 
-      position="0 0 -2" 
-      rotation="-90 0 0" 
-      width="10" 
-      height="10" 
-      color="#1a1a1a" 
-      shadow="receive: true"
-      material="roughness: 0.8">
-    </a-plane>
-    
-    <!-- グリッド -->
-    <a-entity 
-      geometry="primitive: plane; width: 10; height: 10" 
-      material="src: #grid; repeat: 10 10; transparent: true; opacity: 0.3" 
-      rotation="-90 0 0" 
-      position="0 0.01 0">
-    </a-entity>
-    
-    <!-- カメラ -->
-    <a-entity camera position="0 1.6 3" look-controls wasd-controls></a-entity>
-    
-    <!-- アセット -->
-    <a-assets>
-      <img id="grid" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAyJpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMy1jMDExIDY2LjE0NTY2MSwgMjAxMi8wMi8wNi0xNDo1NjoyNyAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RSZWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZVJlZiMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENTNiAoV2luZG93cykiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6OEI5RDc5MTFBNkE2MTFFM0JCMDZEQ0JCMkYwMzY5MjYiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6OEI5RDc5MTJBNkE2MTFFM0JCMDZEQ0JCMkYwMzY5MjYiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo4QjlENzkwRkE2QTYxMUUzQkIwNkVDQkIyRjAzNjkyNiIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDo4QjlENzkxMEE2QTYxMUUzQkIwNkVDQkIyRjAzNjkyNiIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PjTjqp0AAAAtSURBVHjaYvz//z8D/v/v3/8ZGBAY0NjY2AwMDAwM2Pxw9+5dLJgg1AJAgAEAO/sHmBQ5H1YAAAAASUVORK5CYII=">
-      <!-- GLBモデルをアセットとして事前ロード -->
-      <a-asset-item id="rightHandAsset" src="right.glb"></a-asset-item>
-      <a-asset-item id="leftHandAsset" src="left.glb"></a-asset-item>
-    </a-assets>
+
+    <a-plane position="0 0 -2" rotation="-90 0 0" width="4" height="4" color="#CCC" shadow="receive: true"></a-plane>
+
   </a-scene>
-  
-  <script>
-    // ハンドトラッキングのカスタムコンポーネント
-    AFRAME.registerComponent('hand-interaction', {
-      init: function() {
-        this.el.addEventListener('pinchstarted', this.onPinchStart.bind(this));
-        this.el.addEventListener('pinchended', this.onPinchEnd.bind(this));
-        this.el.addEventListener('pinchmoved', this.onPinchMove.bind(this));
-        this.grabbedEntity = null;
-      },
-      
-      onPinchStart: function(event) {
-        const hand = event.target;
-        const position = event.detail.position;
-        
-        // 最も近いgrabbableオブジェクトを探す
-        const grabbables = document.querySelectorAll('.grabbable');
-        let closestEntity = null;
-        let closestDistance = Infinity;
-        
-        grabbables.forEach(entity => {
-          const entityPos = entity.object3D.position;
-          const distance = position.distanceTo(entityPos);
-          if (distance < 0.3 && distance < closestDistance) {
-            closestEntity = entity;
-            closestDistance = distance;
-          }
-        });
-        
-        if (closestEntity) {
-          this.grabbedEntity = closestEntity;
-          this.grabbedEntity.setAttribute('material', 'emissive: #ff0; emissiveIntensity: 0.3');
-        }
-      },
-      
-      onPinchMove: function(event) {
-        if (this.grabbedEntity) {
-          const position = event.detail.position;
-          this.grabbedEntity.object3D.position.copy(position);
-        }
-      },
-      
-      onPinchEnd: function(event) {
-        if (this.grabbedEntity) {
-          this.grabbedEntity.setAttribute('material', 'emissive: #000; emissiveIntensity: 0');
-          this.grabbedEntity = null;
-        }
-      }
-    });
-    
-    // ハンドインタラクションコンポーネントを両手に追加
-    document.querySelector('#rightHand').setAttribute('hand-interaction', '');
-    document.querySelector('#leftHand').setAttribute('hand-interaction', '');
-    
-    // WebXRの状態を監視
-    const scene = document.querySelector('a-scene');
-    const statusEl = document.querySelector('#status');
-    
-    scene.addEventListener('enter-vr', () => {
-      statusEl.textContent = 'VR Mode Active - ハンドトラッキング有効';
-      statusEl.style.color = '#0f0';
-    });
-    
-    scene.addEventListener('exit-vr', () => {
-      statusEl.textContent = 'VR Mode Exited';
-      statusEl.style.color = '#fff';
-    });
-    
-    // シーンのロード完了
-    scene.addEventListener('loaded', () => {
-      statusEl.textContent = 'Ready - VRボタンをクリックして開始';
-      
-      // VRサポートをチェック
-      if ('xr' in navigator) {
-        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-          if (!supported) {
-            statusEl.textContent = 'WebXR not supported on this device';
-            statusEl.style.color = '#f00';
-          }
-        });
-      } else {
-        statusEl.textContent = 'WebXR not available';
-        statusEl.style.color = '#f00';
-      }
-    });
-    
-    // デバッグ用: ハンドトラッキングイベントをログ
-    ['handsconnected', 'handsdisconnected', 'handmodelready'].forEach(eventName => {
-      document.querySelector('#rightHand').addEventListener(eventName, (e) => {
-        console.log(`Right hand: ${eventName}`, e);
-        
-        // ハンドが接続されたらGLBモデルを表示
-        if (eventName === 'handsconnected') {
-          const rightModel = document.querySelector('#rightHandModel');
-          if (rightModel) {
-            rightModel.setAttribute('visible', 'true');
-            // デフォルトのメッシュを非表示にする
-            const rightHand = document.querySelector('#rightHand');
-            rightHand.setAttribute('hand-tracking-controls', 'hand: right; modelStyle: none');
-          }
-        }
-      });
-      
-      document.querySelector('#leftHand').addEventListener(eventName, (e) => {
-        console.log(`Left hand: ${eventName}`, e);
-        
-        // ハンドが接続されたらGLBモデルを表示
-        if (eventName === 'handsconnected') {
-          const leftModel = document.querySelector('#leftHandModel');
-          if (leftModel) {
-            leftModel.setAttribute('visible', 'true');
-            // デフォルトのメッシュを非表示にする
-            const leftHand = document.querySelector('#leftHand');
-            leftHand.setAttribute('hand-tracking-controls', 'hand: left; modelStyle: none');
-          }
-        }
-      });
-    });
-    
-    // GLBモデルをハンドの関節に追従させるコンポーネント
-    AFRAME.registerComponent('hand-model-sync', {
-      schema: {
-        hand: {type: 'string', default: 'right'}
-      },
-      
-      tick: function() {
-        const handEl = this.el.parentElement;
-        const handControls = handEl.components['hand-tracking-controls'];
-        
-        if (handControls && handControls.bones && handControls.bones.length > 0) {
-          // 手首の位置と回転を取得
-          const wrist = handControls.bones.find(bone => bone.name === 'wrist');
-          if (wrist) {
-            // モデルの位置と回転を手首に合わせる
-            this.el.object3D.position.copy(wrist.position);
-            this.el.object3D.quaternion.copy(wrist.quaternion);
-          }
-        }
-      }
-    });
-    
-    // GLBモデルにsyncコンポーネントを追加
-    setTimeout(() => {
-      const rightModel = document.querySelector('#rightHandModel');
-      const leftModel = document.querySelector('#leftHandModel');
-      
-      if (rightModel) {
-        rightModel.setAttribute('hand-model-sync', 'hand: right');
-      }
-      if (leftModel) {
-        leftModel.setAttribute('hand-model-sync', 'hand: left');
-      }
-    }, 1000);
-  </script>
 </body>
 </html>
