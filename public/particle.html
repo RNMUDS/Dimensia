@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <title>Reusable Particle System</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #87cefa;
+            font-size: 14px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #controls h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        #controls div {
+            margin: 5px 0;
+        }
+        #vrButton {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border: 1px solid #87cefa;
+            background: rgba(0,0,0,0.7);
+            color: #87cefa;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            z-index: 100;
+            transition: all 0.3s;
+        }
+        #vrButton:hover {
+            background: rgba(135, 206, 250, 0.2);
+            border-color: #ffffff;
+            color: #ffffff;
+        }
+        #vrButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <h3>操作方法</h3>
+        <div id="pcControls">
+            <strong>PC操作:</strong><br>
+            <div>W/A/S/D - 移動</div>
+            <div>Shift - 倍速移動</div>
+            <div>マウス移動 - 視点回転</div>
+        </div>
+        <div id="vrControls" style="display: none;">
+            <strong>VR操作:</strong><br>
+            <div>グリップ - テレポート</div>
+            <div>ピンチ - テレポート（ハンドトラッキング）</div>
+        </div>
+    </div>
+    
+    <button id="vrButton">Enter VR</button>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+        }
+    }
+    </script>
+    
+    <!-- パーティクル設定を定数として定義 -->
+    <!-- ここの値を変更してパーティクルの動作をカスタマイズできます -->
+    <script>
+        window.PARTICLE_OPTIONS = {
+            particleCount: 1000000,      // パーティクルの数
+            color: 0x87cefa,             // 色 (16進数)
+            maxSize: 0.05,               // パーティクルの最大サイズ
+            positionSpread: {            // パーティクルの初期位置の広がり
+                x: 100,
+                y: 100,
+                z: 100
+            },
+            velocity: {                  // パーティクルの移動速度
+                x: 0,
+                y: 0,                 // 負の値で下向き
+                z: 5
+            },
+            maxAge: 8                    // パーティクルの寿命（秒）
+        };
+        
+        // VR用のパーティクル設定（パフォーマンス最適化）
+        window.VR_PARTICLE_OPTIONS = {
+            particleCount: 100000,       // VRではパーティクル数を減らす
+            color: 0x87cefa,
+            maxSize: 0.05,
+            positionSpread: {
+                x: 50,
+                y: 50,
+                z: 50
+            },
+            velocity: {
+                x: 0,
+                y: 0,
+                z: 2
+            },
+            maxAge: 8
+        };
+    </script>
+    
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

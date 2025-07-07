@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic Hand Tracking - Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        #vrButton {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid #fff;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 25px;
+            transition: all 0.3s;
+        }
+        
+        #vrButton:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateX(-50%) scale(1.05);
+        }
+        
+        #vrButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Realistic Hand Tracking</h3>
+        <p>VR環境で手を表示します</p>
+        <p id="status">WebXRをチェック中...</p>
+    </div>
+    
+    <button id="vrButton">Enter VR</button>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        
+        // === シーン設定 ===
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x202020);
+        scene.fog = new THREE.Fog(0x202020, 1, 20);
+        
+        // === カメラ設定 ===
+        const camera = new THREE.PerspectiveCamera(
+            50,
+            window.innerWidth / window.innerHeight,
+            0.01,
+            100
+        );
+        camera.position.set(0, 1.6, 3);
+        camera.lookAt(0, 1, 0);
+        
+        // === レンダラー設定 ===
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.xr.enabled = true;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+        
+        // === 高度なライティング設定 ===
+        // 環境光
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+        
+        // メインライト（影を落とす）
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        mainLight.position.set(5, 10, 5);
+        mainLight.castShadow = true;
+        mainLight.shadow.camera.near = 0.1;
+        mainLight.shadow.camera.far = 50;
+        mainLight.shadow.camera.left = -5;
+        mainLight.shadow.camera.right = 5;
+        mainLight.shadow.camera.top = 5;
+        mainLight.shadow.camera.bottom = -5;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        scene.add(mainLight);
+        
+        // フィルライト
+        const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
+        fillLight.position.set(-5, 5, -5);
+        scene.add(fillLight);
+        
+        // リムライト（輪郭を強調）
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
+        rimLight.position.set(0, 0, -10);
+        scene.add(rimLight);
+        
+        // 半球ライト（自然な環境光）
+        const hemiLight = new THREE.HemisphereLight(0x8899ff, 0x334455, 0.5);
+        scene.add(hemiLight);
+        
+        // === カメラグループ ===
+        const cameraGroup = new THREE.Group();
+        cameraGroup.add(camera);
+        scene.add(cameraGroup);
+        
+        // プレイヤーに追従するライト
+        const playerLight = new THREE.PointLight(0xffffff, 0.5, 5);
+        playerLight.position.set(0, 0, 0);
+        cameraGroup.add(playerLight);
+        
+        // === 手のマテリアル設定 ===
+        // 肌のマテリアル（サブサーフェススキャッタリング風）
+        const skinMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffdbac,
+            roughness: 0.7,
+            metalness: 0.0,
+            clearcoat: 0.1,
+            clearcoatRoughness: 0.8,
+            sheen: 0.3,
+            sheenColor: 0xffaaaa,
+            emissive: 0xff6644,
+            emissiveIntensity: 0.02,
+            transmission: 0.05,
+            thickness: 0.5
+        });
+        
+        // 爪のマテリアル
+        const nailMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffeeee,
+            roughness: 0.3,
+            metalness: 0.0,
+            clearcoat: 0.5,
+            clearcoatRoughness: 0.1,
+            opacity: 0.9,
+            transparent: true
+        });
+        
+        // === ハンドトラッキング設定 ===
+        const hand1 = renderer.xr.getHand(0);
+        const hand2 = renderer.xr.getHand(1);
+        cameraGroup.add(hand1);
+        cameraGroup.add(hand2);
+        
+        // 手の関節データ
+        const handData1 = { joints: {}, bones: [], handBack: null };
+        const handData2 = { joints: {}, bones: [], handBack: null };
+        
+        // 指の骨の接続定義
+        const fingerBones = {
+            thumb: [
+                ['wrist', 'thumb-metacarpal'],
+                ['thumb-metacarpal', 'thumb-phalanx-proximal'],
+                ['thumb-phalanx-proximal', 'thumb-phalanx-distal'],
+                ['thumb-phalanx-distal', 'thumb-tip']
+            ],
+            index: [
+                ['wrist', 'index-finger-metacarpal'],
+                ['index-finger-metacarpal', 'index-finger-phalanx-proximal'],
+                ['index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate'],
+                ['index-finger-phalanx-intermediate', 'index-finger-phalanx-distal'],
+                ['index-finger-phalanx-distal', 'index-finger-tip']
+            ],
+            middle: [
+                ['wrist', 'middle-finger-metacarpal'],
+                ['middle-finger-metacarpal', 'middle-finger-phalanx-proximal'],
+                ['middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate'],
+                ['middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal'],
+                ['middle-finger-phalanx-distal', 'middle-finger-tip']
+            ],
+            ring: [
+                ['wrist', 'ring-finger-metacarpal'],
+                ['ring-finger-metacarpal', 'ring-finger-phalanx-proximal'],
+                ['ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate'],
+                ['ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal'],
+                ['ring-finger-phalanx-distal', 'ring-finger-tip']
+            ],
+            pinky: [
+                ['wrist', 'pinky-finger-metacarpal'],
+                ['pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal'],
+                ['pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate'],
+                ['pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal'],
+                ['pinky-finger-phalanx-distal', 'pinky-finger-tip']
+            ]
+        };
+        
+        // 関節の球体を作成
+        function createJointSphere(radius = 0.008) {
+            const geometry = new THREE.SphereGeometry(radius, 16, 12);
+            const mesh = new THREE.Mesh(geometry, skinMaterial);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+        
+        // 骨のシリンダーを作成
+        function createBoneCylinder() {
+            const geometry = new THREE.CylinderGeometry(0.006, 0.008, 1, 12);
+            const mesh = new THREE.Mesh(geometry, skinMaterial);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+        
+        // 爪を作成（より現実的な形状）
+        function createNail() {
+            // 爪の形状を作成（実際の爪の形状に近づける）
+            const shape = new THREE.Shape();
+            // 爪の輪郭を描く（底辺が曲線、上部が半円形）
+            shape.moveTo(-0.0035, -0.002);
+            shape.quadraticCurveTo(-0.0035, -0.003, -0.003, -0.003);
+            shape.quadraticCurveTo(0, -0.0035, 0.003, -0.003);
+            shape.quadraticCurveTo(0.0035, -0.003, 0.0035, -0.002);
+            shape.quadraticCurveTo(0.0035, 0.002, 0.003, 0.004);
+            shape.quadraticCurveTo(0.0015, 0.005, 0, 0.0055);
+            shape.quadraticCurveTo(-0.0015, 0.005, -0.003, 0.004);
+            shape.quadraticCurveTo(-0.0035, 0.002, -0.0035, -0.002);
+            
+            const extrudeSettings = {
+                depth: 0.0008,
+                bevelEnabled: true,
+                bevelSegments: 2,
+                bevelSize: 0.0003,
+                bevelThickness: 0.0002,
+                curveSegments: 12
+            };
+            
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geometry.rotateX(-Math.PI / 2);
+            geometry.translate(0, 0.002, -0.006);
+            
+            const mesh = new THREE.Mesh(geometry, nailMaterial);
+            mesh.castShadow = true;
+            return mesh;
+        }
+        
+        // 手の甲のメッシュを作成
+        function createHandBack() {
+            // より複雑で現実的な手の甲の形状
+            const shape = new THREE.Shape();
+            
+            // 手首側（底辺）
+            shape.moveTo(-0.035, -0.01);
+            
+            // 小指側の輪郭
+            shape.bezierCurveTo(-0.038, 0.01, -0.04, 0.03, -0.038, 0.05);
+            shape.bezierCurveTo(-0.036, 0.065, -0.032, 0.075, -0.025, 0.08);
+            
+            // 小指の付け根付近
+            shape.bezierCurveTo(-0.022, 0.082, -0.02, 0.083, -0.018, 0.082);
+            
+            // 薬指との谷間
+            shape.lineTo(-0.015, 0.078);
+            shape.bezierCurveTo(-0.013, 0.082, -0.01, 0.083, -0.008, 0.082);
+            
+            // 中指との谷間
+            shape.lineTo(-0.005, 0.078);
+            shape.bezierCurveTo(-0.002, 0.082, 0.002, 0.082, 0.005, 0.078);
+            
+            // 人差し指との谷間
+            shape.lineTo(0.008, 0.082);
+            shape.bezierCurveTo(0.01, 0.083, 0.013, 0.082, 0.015, 0.078);
+            
+            // 人差し指の付け根
+            shape.lineTo(0.018, 0.082);
+            shape.bezierCurveTo(0.02, 0.083, 0.022, 0.082, 0.025, 0.08);
+            
+            // 親指側の輪郭
+            shape.bezierCurveTo(0.032, 0.075, 0.036, 0.065, 0.038, 0.05);
+            shape.bezierCurveTo(0.04, 0.03, 0.038, 0.01, 0.035, -0.01);
+            
+            // 手首に戻る
+            shape.bezierCurveTo(0.025, -0.012, 0.01, -0.013, 0, -0.013);
+            shape.bezierCurveTo(-0.01, -0.013, -0.025, -0.012, -0.035, -0.01);
+            
+            const extrudeSettings = {
+                depth: 0.008,
+                bevelEnabled: true,
+                bevelSegments: 4,
+                bevelSize: 0.0015,
+                bevelThickness: 0.0015,
+                curveSegments: 16
+            };
+            
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geometry.rotateX(-Math.PI / 2);
+            geometry.translate(0, 0.002, -0.004);
+            
+            const mesh = new THREE.Mesh(geometry, skinMaterial);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+        
+        // 手のメッシュを初期化
+        function initializeHandMeshes(hand, handData) {
+            // 手の甲を作成
+            handData.handBack = createHandBack();
+            handData.handBack.visible = false;
+            scene.add(handData.handBack);
+            
+            // 全ての関節に球体を作成
+            const jointNames = [
+                'wrist',
+                'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip',
+                'index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip',
+                'middle-finger-metacarpal', 'middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal', 'middle-finger-tip',
+                'ring-finger-metacarpal', 'ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal', 'ring-finger-tip',
+                'pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal', 'pinky-finger-tip'
+            ];
+            
+            // 関節の球体を作成
+            jointNames.forEach(name => {
+                const radius = name === 'wrist' ? 0.015 : 
+                              name.includes('metacarpal') ? 0.01 : 
+                              name.includes('tip') ? 0.006 : 0.008;
+                const joint = createJointSphere(radius);
+                joint.visible = false;
+                scene.add(joint);
+                handData.joints[name] = joint;
+                
+                // 指先に爪を追加
+                if (name.includes('tip')) {
+                    const nail = createNail();
+                    nail.visible = false;
+                    scene.add(nail);
+                    handData.joints[name + '-nail'] = nail;
+                }
+            });
+            
+            // 骨の接続を作成（手の甲があるので手のひらの接続は削減）
+            const allConnections = [];
+            Object.values(fingerBones).forEach(finger => {
+                allConnections.push(...finger);
+            });
+            // 手の甲があるので、metacarpal間の接続は不要
+            
+            allConnections.forEach(() => {
+                const bone = createBoneCylinder();
+                bone.visible = false;
+                scene.add(bone);
+                handData.bones.push(bone);
+            });
+        }
+        
+        // 手のメッシュを更新
+        function updateHandMeshes(hand, handData) {
+            if (!renderer.xr.isPresenting || !hand.joints) return;
+            
+            // 手の甲の位置を更新
+            if (handData.handBack && hand.joints['wrist']) {
+                const wristPos = new THREE.Vector3();
+                const wristQuat = new THREE.Quaternion();
+                const wristScale = new THREE.Vector3();
+                
+                hand.joints['wrist'].matrixWorld.decompose(wristPos, wristQuat, wristScale);
+                
+                // 手の甲を手首の位置に配置
+                handData.handBack.position.copy(wristPos);
+                handData.handBack.quaternion.copy(wristQuat);
+                
+                // 手の向きに基づいて位置を調整（手の甲を正しく配置）
+                const offset = new THREE.Vector3(0, 0.005, -0.03);
+                offset.applyQuaternion(wristQuat);
+                handData.handBack.position.add(offset);
+                
+                // 手の甲のスケールを動的に調整（手のサイズに合わせる）
+                const thumbDist = hand.joints['thumb-metacarpal'] ? 
+                    new THREE.Vector3().setFromMatrixPosition(hand.joints['thumb-metacarpal'].matrixWorld).distanceTo(wristPos) : 0.08;
+                const scale = thumbDist / 0.08; // 基準サイズに対する比率
+                handData.handBack.scale.setScalar(scale);
+                
+                handData.handBack.visible = true;
+            }
+            
+            // 関節の位置を更新
+            for (const [jointName, jointMesh] of Object.entries(handData.joints)) {
+                const joint = hand.joints[jointName.replace('-nail', '')];
+                if (joint && jointMesh) {
+                    const position = new THREE.Vector3();
+                    const quaternion = new THREE.Quaternion();
+                    const scale = new THREE.Vector3();
+                    
+                    joint.matrixWorld.decompose(position, quaternion, scale);
+                    jointMesh.position.copy(position);
+                    jointMesh.quaternion.copy(quaternion);
+                    jointMesh.visible = true;
+                    
+                    // 爪の位置と向きを調整
+                    if (jointName.includes('-nail')) {
+                        const tipName = jointName.replace('-nail', '');
+                        const fingerName = tipName.split('-')[0];
+                        
+                        // 指の方向を計算（指先の一つ前の関節から指先への方向）
+                        let prevJointName = '';
+                        if (tipName === 'thumb-tip') {
+                            prevJointName = 'thumb-phalanx-distal';
+                        } else {
+                            prevJointName = tipName.replace('-tip', '-phalanx-distal');
+                        }
+                        
+                        if (hand.joints[prevJointName]) {
+                            const prevPos = new THREE.Vector3();
+                            const tipPos = new THREE.Vector3();
+                            hand.joints[prevJointName].matrixWorld.decompose(prevPos, new THREE.Quaternion(), new THREE.Vector3());
+                            joint.matrixWorld.decompose(tipPos, new THREE.Quaternion(), new THREE.Vector3());
+                            
+                            // 指の方向ベクトル
+                            const fingerDirection = new THREE.Vector3().subVectors(tipPos, prevPos).normalize();
+                            
+                            // 爪を指先から少し前方に配置
+                            jointMesh.position.copy(position);
+                            jointMesh.position.addScaledVector(fingerDirection, 0.006);
+                            
+                            // 爪を指の方向に向ける
+                            const lookAtPoint = new THREE.Vector3().addVectors(jointMesh.position, fingerDirection);
+                            jointMesh.lookAt(lookAtPoint);
+                            jointMesh.rotateX(-Math.PI / 2);
+                            jointMesh.rotateZ(Math.PI);
+                            
+                            // 指の太さに応じて爪のサイズを調整
+                            const nailScale = fingerName === 'thumb' ? 1.2 : 1.0;
+                            jointMesh.scale.setScalar(nailScale);
+                        }
+                    }
+                }
+            }
+            
+            // 骨の接続を更新
+            let boneIndex = 0;
+            const allConnections = [];
+            Object.values(fingerBones).forEach(finger => {
+                allConnections.push(...finger);
+            });
+            // 手の甲があるので、metacarpal間の接続は不要
+            
+            allConnections.forEach(([joint1Name, joint2Name]) => {
+                const joint1 = hand.joints[joint1Name];
+                const joint2 = hand.joints[joint2Name];
+                const bone = handData.bones[boneIndex++];
+                
+                if (joint1 && joint2 && bone) {
+                    const pos1 = new THREE.Vector3();
+                    const pos2 = new THREE.Vector3();
+                    
+                    joint1.matrixWorld.decompose(pos1, new THREE.Quaternion(), new THREE.Vector3());
+                    joint2.matrixWorld.decompose(pos2, new THREE.Quaternion(), new THREE.Vector3());
+                    
+                    // 中点を計算
+                    const midpoint = new THREE.Vector3();
+                    midpoint.lerpVectors(pos1, pos2, 0.5);
+                    
+                    // 距離を計算
+                    const distance = pos1.distanceTo(pos2);
+                    
+                    // ボーンの位置とスケールを設定
+                    bone.position.copy(midpoint);
+                    bone.scale.y = distance;
+                    
+                    // ボーンの向きを設定
+                    const direction = new THREE.Vector3();
+                    direction.subVectors(pos2, pos1).normalize();
+                    const quaternion = new THREE.Quaternion();
+                    quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+                    bone.quaternion.copy(quaternion);
+                    
+                    bone.visible = true;
+                }
+            });
+        }
+        
+        // 手のメッシュを初期化
+        initializeHandMeshes(hand1, handData1);
+        initializeHandMeshes(hand2, handData2);
+        
+        // === VRボタンの設定 ===
+        const vrButton = document.getElementById('vrButton');
+        const statusText = document.getElementById('status');
+        
+        if ('xr' in navigator) {
+            navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                if (supported) {
+                    statusText.textContent = 'VR Ready - "Enter VR"をクリックして開始';
+                    statusText.style.color = '#0f0';
+                    
+                    vrButton.addEventListener('click', async () => {
+                        const sessionInit = {
+                            requiredFeatures: ['hand-tracking'],
+                            optionalFeatures: ['local-floor', 'bounded-floor']
+                        };
+                        
+                        try {
+                            const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                            renderer.xr.setSession(session);
+                            statusText.textContent = 'VR Active - 手を見てください';
+                            
+                            session.addEventListener('end', () => {
+                                statusText.textContent = 'VR Ended - 再度開始できます';
+                                statusText.style.color = '#fff';
+                            });
+                        } catch (e) {
+                            console.error('VRセッションの開始に失敗:', e);
+                            statusText.textContent = 'VRセッションの開始に失敗しました';
+                            statusText.style.color = '#f00';
+                        }
+                    });
+                } else {
+                    vrButton.disabled = true;
+                    statusText.textContent = 'VRはサポートされていません';
+                    statusText.style.color = '#f00';
+                }
+            });
+        } else {
+            vrButton.disabled = true;
+            statusText.textContent = 'WebXRがサポートされていません';
+            statusText.style.color = '#f00';
+        }
+        
+        // === 背景の装飾 ===
+        // グリッド
+        const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x222222);
+        scene.add(gridHelper);
+        
+        // === アニメーションループ ===
+        function animate() {
+            // 手のメッシュを更新
+            updateHandMeshes(hand1, handData1);
+            updateHandMeshes(hand2, handData2);
+        }
+        
+        renderer.setAnimationLoop(() => {
+            animate();
+            renderer.render(scene, camera);
+        });
+        
+        // === ウィンドウリサイズ対応 ===
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
