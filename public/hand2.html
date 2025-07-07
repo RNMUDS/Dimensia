@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>A-Frame Hand Tracking</title>
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
+  <title>A-Frame Hand Tracking - v1.7.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
   <style>
     body {
       margin: 0;
@@ -15,293 +16,283 @@
       left: 10px;
       color: white;
       background: rgba(0,0,0,0.7);
-      padding: 10px;
+      padding: 15px;
       border-radius: 5px;
       z-index: 100;
+      font-size: 14px;
+    }
+    #info h3 {
+      margin: 0 0 10px 0;
+    }
+    #info p {
+      margin: 5px 0;
     }
   </style>
 </head>
 <body>
   <div id="info">
-    <h3>A-Frame Hand Tracking</h3>
+    <h3>A-Frame Hand Tracking Demo</h3>
     <p>VRヘッドセットで手が表示されます</p>
+    <p>ピンチジェスチャー: オブジェクトを掴む</p>
+    <p id="status">Loading...</p>
   </div>
   
   <a-scene
-    webxr="optionalFeatures: hand-tracking;"
-    renderer="colorManagement: true; physicallyCorrectLights: true; shadowMap.enabled: true;"
+    webxr="requiredFeatures: hand-tracking; optionalFeatures: bounded-floor"
+    renderer="colorManagement: true; physicallyCorrectLights: true"
     shadow="type: pcfsoft">
     
-    <!-- Assets -->
-    <a-assets>
-      <!-- 手のマテリアル -->
-      <a-mixin id="hand-material" material="color: #ffdbac; roughness: 0.7; metalness: 0"></a-mixin>
-      <a-mixin id="nail-material" material="color: #ffeeee; roughness: 0.3; metalness: 0; opacity: 0.9"></a-mixin>
-    </a-assets>
-
-    <!-- ライティング -->
+    <!-- ライティング設定 -->
     <a-entity light="type: ambient; color: #404040; intensity: 0.5"></a-entity>
-    <a-entity light="type: directional; position: 5 10 5; color: #ffffff; intensity: 0.8; castShadow: true"></a-entity>
+    <a-entity light="type: directional; position: 5 10 5; color: #ffffff; intensity: 0.8; castShadow: true; shadowCameraVisible: false"></a-entity>
     <a-entity light="type: directional; position: -5 5 -5; color: #4488ff; intensity: 0.3"></a-entity>
-    <a-entity light="type: hemisphere; groundColor: #334455; color: #8899ff; intensity: 0.5"></a-entity>
-
-    <!-- 右手 -->
-    <a-entity id="rightHand" hand-tracking-controls="hand: right; modelStyle: mesh">
-      <!-- 手の構成要素はJavaScriptで動的に生成 -->
+    
+    <!-- 右手の設定 -->
+    <a-entity 
+      id="rightHand"
+      hand-tracking-controls="hand: right; modelStyle: mesh; modelColor: #ffdbac">
+      <!-- GLBモデルを追加 -->
+      <a-gltf-model 
+        src="#rightHandAsset" 
+        position="0 0 0"
+        rotation="0 0 0"
+        scale="1 1 1"
+        shadow="cast: true; receive: true"
+        visible="false"
+        id="rightHandModel"
+        animation-mixer>
+      </a-gltf-model>
     </a-entity>
-
-    <!-- 左手 -->
-    <a-entity id="leftHand" hand-tracking-controls="hand: left; modelStyle: mesh">
-      <!-- 手の構成要素はJavaScriptで動的に生成 -->
+    
+    <!-- 左手の設定 -->
+    <a-entity 
+      id="leftHand"
+      hand-tracking-controls="hand: left; modelStyle: mesh; modelColor: #ffdbac">
+      <!-- GLBモデルを追加 -->
+      <a-gltf-model 
+        src="#leftHandAsset" 
+        position="0 0 0"
+        rotation="0 0 0"
+        scale="1 1 1"
+        shadow="cast: true; receive: true"
+        visible="false"
+        id="leftHandModel"
+        animation-mixer>
+      </a-gltf-model>
     </a-entity>
-
+    
+    <!-- インタラクティブなオブジェクト -->
+    <a-box
+      id="cube1"
+      position="-0.5 1 -2"
+      rotation="0 45 0"
+      color="#4CC3D9"
+      shadow="cast: true; receive: true"
+      class="grabbable">
+    </a-box>
+    
+    <a-sphere
+      id="sphere1"
+      position="0.5 1 -2"
+      radius="0.5"
+      color="#EF2D5E"
+      shadow="cast: true; receive: true"
+      class="grabbable">
+    </a-sphere>
+    
+    <a-cylinder
+      id="cylinder1"
+      position="0 1 -3"
+      radius="0.3"
+      height="0.8"
+      color="#FFC65D"
+      shadow="cast: true; receive: true"
+      class="grabbable">
+    </a-cylinder>
+    
     <!-- 床 -->
-    <a-plane position="0 0 -2" rotation="-90 0 0" width="10" height="10" color="#202020" shadow="receive: true"></a-plane>
+    <a-plane 
+      position="0 0 -2" 
+      rotation="-90 0 0" 
+      width="10" 
+      height="10" 
+      color="#1a1a1a" 
+      shadow="receive: true"
+      material="roughness: 0.8">
+    </a-plane>
     
     <!-- グリッド -->
-    <a-entity geometry="primitive: plane; width: 10; height: 10" 
-              material="color: #444444; wireframe: true; opacity: 0.3" 
-              rotation="-90 0 0" 
-              position="0 0.01 0"></a-entity>
-
+    <a-entity 
+      geometry="primitive: plane; width: 10; height: 10" 
+      material="src: #grid; repeat: 10 10; transparent: true; opacity: 0.3" 
+      rotation="-90 0 0" 
+      position="0 0.01 0">
+    </a-entity>
+    
     <!-- カメラ -->
     <a-entity camera position="0 1.6 3" look-controls wasd-controls></a-entity>
+    
+    <!-- アセット -->
+    <a-assets>
+      <img id="grid" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAyJpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMy1jMDExIDY2LjE0NTY2MSwgMjAxMi8wMi8wNi0xNDo1NjoyNyAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RSZWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZVJlZiMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENTNiAoV2luZG93cykiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6OEI5RDc5MTFBNkE2MTFFM0JCMDZEQ0JCMkYwMzY5MjYiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6OEI5RDc5MTJBNkE2MTFFM0JCMDZEQ0JCMkYwMzY5MjYiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDo4QjlENzkwRkE2QTYxMUUzQkIwNkVDQkIyRjAzNjkyNiIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDo4QjlENzkxMEE2QTYxMUUzQkIwNkVDQkIyRjAzNjkyNiIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PjTjqp0AAAAtSURBVHjaYvz//z8D/v/v3/8ZGBAY0NjY2AwMDAwM2Pxw9+5dLJgg1AJAgAEAO/sHmBQ5H1YAAAAASUVORK5CYII=">
+      <!-- GLBモデルをアセットとして事前ロード -->
+      <a-asset-item id="rightHandAsset" src="right.glb"></a-asset-item>
+      <a-asset-item id="leftHandAsset" src="left.glb"></a-asset-item>
+    </a-assets>
   </a-scene>
   
   <script>
-    // A-Frameコンポーネント: リアルな手の表示
-    AFRAME.registerComponent('realistic-hand', {
-      schema: {
-        hand: {type: 'string', default: 'right'}
-      },
-      
+    // ハンドトラッキングのカスタムコンポーネント
+    AFRAME.registerComponent('hand-interaction', {
       init: function() {
-        this.jointEntities = {};
-        this.boneEntities = [];
-        this.handBackEntity = null;
-        
-        // 指の接続関係
-        this.fingerConnections = [
-          // 親指
-          ['wrist', 'thumb-metacarpal'],
-          ['thumb-metacarpal', 'thumb-phalanx-proximal'],
-          ['thumb-phalanx-proximal', 'thumb-phalanx-distal'],
-          ['thumb-phalanx-distal', 'thumb-tip'],
-          // 人差し指
-          ['wrist', 'index-finger-metacarpal'],
-          ['index-finger-metacarpal', 'index-finger-phalanx-proximal'],
-          ['index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate'],
-          ['index-finger-phalanx-intermediate', 'index-finger-phalanx-distal'],
-          ['index-finger-phalanx-distal', 'index-finger-tip'],
-          // 中指
-          ['wrist', 'middle-finger-metacarpal'],
-          ['middle-finger-metacarpal', 'middle-finger-phalanx-proximal'],
-          ['middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate'],
-          ['middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal'],
-          ['middle-finger-phalanx-distal', 'middle-finger-tip'],
-          // 薬指
-          ['wrist', 'ring-finger-metacarpal'],
-          ['ring-finger-metacarpal', 'ring-finger-phalanx-proximal'],
-          ['ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate'],
-          ['ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal'],
-          ['ring-finger-phalanx-distal', 'ring-finger-tip'],
-          // 小指
-          ['wrist', 'pinky-finger-metacarpal'],
-          ['pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal'],
-          ['pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate'],
-          ['pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal'],
-          ['pinky-finger-phalanx-distal', 'pinky-finger-tip']
-        ];
-        
-        this.createHandMeshes();
+        this.el.addEventListener('pinchstarted', this.onPinchStart.bind(this));
+        this.el.addEventListener('pinchended', this.onPinchEnd.bind(this));
+        this.el.addEventListener('pinchmoved', this.onPinchMove.bind(this));
+        this.grabbedEntity = null;
       },
       
-      createHandMeshes: function() {
-        const jointNames = [
-          'wrist',
-          'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip',
-          'index-finger-metacarpal', 'index-finger-phalanx-proximal', 'index-finger-phalanx-intermediate', 'index-finger-phalanx-distal', 'index-finger-tip',
-          'middle-finger-metacarpal', 'middle-finger-phalanx-proximal', 'middle-finger-phalanx-intermediate', 'middle-finger-phalanx-distal', 'middle-finger-tip',
-          'ring-finger-metacarpal', 'ring-finger-phalanx-proximal', 'ring-finger-phalanx-intermediate', 'ring-finger-phalanx-distal', 'ring-finger-tip',
-          'pinky-finger-metacarpal', 'pinky-finger-phalanx-proximal', 'pinky-finger-phalanx-intermediate', 'pinky-finger-phalanx-distal', 'pinky-finger-tip'
-        ];
+      onPinchStart: function(event) {
+        const hand = event.target;
+        const position = event.detail.position;
         
-        // 関節の球体を作成
-        jointNames.forEach(name => {
-          let radius;
-          if (name === 'wrist') {
-            radius = 0.02;
-          } else if (name.includes('metacarpal')) {
-            radius = 0.012;
-          } else if (name.includes('tip')) {
-            radius = 0.006;
-          } else if (name.includes('proximal')) {
-            radius = 0.009;
-          } else if (name.includes('intermediate')) {
-            radius = 0.008;
-          } else if (name.includes('distal')) {
-            radius = 0.007;
-          } else {
-            radius = 0.008;
-          }
-          
-          const joint = document.createElement('a-sphere');
-          joint.setAttribute('radius', radius);
-          joint.setAttribute('mixin', 'hand-material');
-          joint.setAttribute('shadow', 'cast: true; receive: true');
-          joint.setAttribute('visible', 'false');
-          this.el.appendChild(joint);
-          this.jointEntities[name] = joint;
-          
-          // 指先に爪を追加
-          if (name.includes('tip')) {
-            const nail = document.createElement('a-box');
-            nail.setAttribute('width', '0.008');
-            nail.setAttribute('height', '0.001');
-            nail.setAttribute('depth', '0.006');
-            nail.setAttribute('mixin', 'nail-material');
-            nail.setAttribute('shadow', 'cast: true');
-            nail.setAttribute('visible', 'false');
-            this.el.appendChild(nail);
-            this.jointEntities[name + '-nail'] = nail;
+        // 最も近いgrabbableオブジェクトを探す
+        const grabbables = document.querySelectorAll('.grabbable');
+        let closestEntity = null;
+        let closestDistance = Infinity;
+        
+        grabbables.forEach(entity => {
+          const entityPos = entity.object3D.position;
+          const distance = position.distanceTo(entityPos);
+          if (distance < 0.3 && distance < closestDistance) {
+            closestEntity = entity;
+            closestDistance = distance;
           }
         });
         
-        // 骨の接続を作成
-        this.fingerConnections.forEach(() => {
-          const bone = document.createElement('a-cylinder');
-          bone.setAttribute('radius', '0.005');
-          bone.setAttribute('height', '1');
-          bone.setAttribute('mixin', 'hand-material');
-          bone.setAttribute('shadow', 'cast: true');
-          bone.setAttribute('visible', 'false');
-          this.el.appendChild(bone);
-          this.boneEntities.push(bone);
-        });
-        
-        // 手の甲の代わりに大きめの楕円体
-        this.handBackEntity = document.createElement('a-box');
-        this.handBackEntity.setAttribute('width', '0.08');
-        this.handBackEntity.setAttribute('height', '0.01');
-        this.handBackEntity.setAttribute('depth', '0.06');
-        this.handBackEntity.setAttribute('mixin', 'hand-material');
-        this.handBackEntity.setAttribute('shadow', 'cast: true; receive: true');
-        this.handBackEntity.setAttribute('visible', 'false');
-        this.el.appendChild(this.handBackEntity);
-      },
-      
-      tick: function() {
-        const hand = this.el.components['hand-tracking-controls'];
-        if (!hand || !hand.bones) return;
-        
-        // 関節の位置を更新
-        for (const [jointName, jointEntity] of Object.entries(this.jointEntities)) {
-          const bone = hand.bones.find(b => b.name === jointName.replace('-nail', ''));
-          if (bone && bone.position) {
-            jointEntity.setAttribute('position', bone.position);
-            if (bone.quaternion) {
-              jointEntity.setAttribute('rotation', {
-                x: THREE.MathUtils.radToDeg(bone.quaternion.x),
-                y: THREE.MathUtils.radToDeg(bone.quaternion.y),
-                z: THREE.MathUtils.radToDeg(bone.quaternion.z)
-              });
-            }
-            jointEntity.setAttribute('visible', 'true');
-            
-            // 爪の位置を調整
-            if (jointName.includes('-nail')) {
-              const tipName = jointName.replace('-nail', '');
-              const tipBone = hand.bones.find(b => b.name === tipName);
-              if (tipBone && tipBone.position) {
-                const nailPos = new THREE.Vector3(
-                  tipBone.position.x,
-                  tipBone.position.y + 0.006,
-                  tipBone.position.z
-                );
-                jointEntity.setAttribute('position', nailPos);
-              }
-            }
-          }
+        if (closestEntity) {
+          this.grabbedEntity = closestEntity;
+          this.grabbedEntity.setAttribute('material', 'emissive: #ff0; emissiveIntensity: 0.3');
         }
-        
-        // 骨の接続を更新
-        let boneIndex = 0;
-        this.fingerConnections.forEach(([joint1Name, joint2Name]) => {
-          const bone1 = hand.bones.find(b => b.name === joint1Name);
-          const bone2 = hand.bones.find(b => b.name === joint2Name);
-          const boneEntity = this.boneEntities[boneIndex++];
-          
-          if (bone1 && bone2 && bone1.position && bone2.position) {
-            // 中点を計算
-            const midpoint = new THREE.Vector3(
-              (bone1.position.x + bone2.position.x) / 2,
-              (bone1.position.y + bone2.position.y) / 2,
-              (bone1.position.z + bone2.position.z) / 2
-            );
-            
-            // 距離を計算
-            const distance = new THREE.Vector3(
-              bone1.position.x,
-              bone1.position.y,
-              bone1.position.z
-            ).distanceTo(new THREE.Vector3(
-              bone2.position.x,
-              bone2.position.y,
-              bone2.position.z
-            ));
-            
-            boneEntity.setAttribute('position', midpoint);
-            boneEntity.setAttribute('height', distance * 0.9);
-            
-            // シリンダーの向きを設定
-            const direction = new THREE.Vector3(
-              bone2.position.x - bone1.position.x,
-              bone2.position.y - bone1.position.y,
-              bone2.position.z - bone1.position.z
-            ).normalize();
-            
-            const rotation = new THREE.Euler();
-            rotation.setFromQuaternion(
-              new THREE.Quaternion().setFromUnitVectors(
-                new THREE.Vector3(0, 1, 0),
-                direction
-              )
-            );
-            
-            boneEntity.setAttribute('rotation', {
-              x: THREE.MathUtils.radToDeg(rotation.x),
-              y: THREE.MathUtils.radToDeg(rotation.y),
-              z: THREE.MathUtils.radToDeg(rotation.z)
-            });
-            
-            boneEntity.setAttribute('visible', 'true');
-          }
-        });
-        
-        // 手の甲の位置を更新
-        const wristBone = hand.bones.find(b => b.name === 'wrist');
-        if (wristBone && wristBone.position && this.handBackEntity) {
-          const backPos = new THREE.Vector3(
-            wristBone.position.x,
-            wristBone.position.y + 0.005,
-            wristBone.position.z - 0.03
-          );
-          this.handBackEntity.setAttribute('position', backPos);
-          if (wristBone.quaternion) {
-            this.handBackEntity.setAttribute('rotation', {
-              x: THREE.MathUtils.radToDeg(wristBone.quaternion.x),
-              y: THREE.MathUtils.radToDeg(wristBone.quaternion.y),
-              z: THREE.MathUtils.radToDeg(wristBone.quaternion.z)
-            });
-          }
-          this.handBackEntity.setAttribute('visible', 'true');
+      },
+      
+      onPinchMove: function(event) {
+        if (this.grabbedEntity) {
+          const position = event.detail.position;
+          this.grabbedEntity.object3D.position.copy(position);
+        }
+      },
+      
+      onPinchEnd: function(event) {
+        if (this.grabbedEntity) {
+          this.grabbedEntity.setAttribute('material', 'emissive: #000; emissiveIntensity: 0');
+          this.grabbedEntity = null;
         }
       }
     });
     
-    // コンポーネントをハンドエンティティに適用
-    document.getElementById('rightHand').setAttribute('realistic-hand', 'hand: right');
-    document.getElementById('leftHand').setAttribute('realistic-hand', 'hand: left');
+    // ハンドインタラクションコンポーネントを両手に追加
+    document.querySelector('#rightHand').setAttribute('hand-interaction', '');
+    document.querySelector('#leftHand').setAttribute('hand-interaction', '');
+    
+    // WebXRの状態を監視
+    const scene = document.querySelector('a-scene');
+    const statusEl = document.querySelector('#status');
+    
+    scene.addEventListener('enter-vr', () => {
+      statusEl.textContent = 'VR Mode Active - ハンドトラッキング有効';
+      statusEl.style.color = '#0f0';
+    });
+    
+    scene.addEventListener('exit-vr', () => {
+      statusEl.textContent = 'VR Mode Exited';
+      statusEl.style.color = '#fff';
+    });
+    
+    // シーンのロード完了
+    scene.addEventListener('loaded', () => {
+      statusEl.textContent = 'Ready - VRボタンをクリックして開始';
+      
+      // VRサポートをチェック
+      if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+          if (!supported) {
+            statusEl.textContent = 'WebXR not supported on this device';
+            statusEl.style.color = '#f00';
+          }
+        });
+      } else {
+        statusEl.textContent = 'WebXR not available';
+        statusEl.style.color = '#f00';
+      }
+    });
+    
+    // デバッグ用: ハンドトラッキングイベントをログ
+    ['handsconnected', 'handsdisconnected', 'handmodelready'].forEach(eventName => {
+      document.querySelector('#rightHand').addEventListener(eventName, (e) => {
+        console.log(`Right hand: ${eventName}`, e);
+        
+        // ハンドが接続されたらGLBモデルを表示
+        if (eventName === 'handsconnected') {
+          const rightModel = document.querySelector('#rightHandModel');
+          if (rightModel) {
+            rightModel.setAttribute('visible', 'true');
+            // デフォルトのメッシュを非表示にする
+            const rightHand = document.querySelector('#rightHand');
+            rightHand.setAttribute('hand-tracking-controls', 'hand: right; modelStyle: none');
+          }
+        }
+      });
+      
+      document.querySelector('#leftHand').addEventListener(eventName, (e) => {
+        console.log(`Left hand: ${eventName}`, e);
+        
+        // ハンドが接続されたらGLBモデルを表示
+        if (eventName === 'handsconnected') {
+          const leftModel = document.querySelector('#leftHandModel');
+          if (leftModel) {
+            leftModel.setAttribute('visible', 'true');
+            // デフォルトのメッシュを非表示にする
+            const leftHand = document.querySelector('#leftHand');
+            leftHand.setAttribute('hand-tracking-controls', 'hand: left; modelStyle: none');
+          }
+        }
+      });
+    });
+    
+    // GLBモデルをハンドの関節に追従させるコンポーネント
+    AFRAME.registerComponent('hand-model-sync', {
+      schema: {
+        hand: {type: 'string', default: 'right'}
+      },
+      
+      tick: function() {
+        const handEl = this.el.parentElement;
+        const handControls = handEl.components['hand-tracking-controls'];
+        
+        if (handControls && handControls.bones && handControls.bones.length > 0) {
+          // 手首の位置と回転を取得
+          const wrist = handControls.bones.find(bone => bone.name === 'wrist');
+          if (wrist) {
+            // モデルの位置と回転を手首に合わせる
+            this.el.object3D.position.copy(wrist.position);
+            this.el.object3D.quaternion.copy(wrist.quaternion);
+          }
+        }
+      }
+    });
+    
+    // GLBモデルにsyncコンポーネントを追加
+    setTimeout(() => {
+      const rightModel = document.querySelector('#rightHandModel');
+      const leftModel = document.querySelector('#leftHandModel');
+      
+      if (rightModel) {
+        rightModel.setAttribute('hand-model-sync', 'hand: right');
+      }
+      if (leftModel) {
+        leftModel.setAttribute('hand-model-sync', 'hand: left');
+      }
+    }, 1000);
   </script>
 </body>
 </html>
