@@ -213,6 +213,200 @@
         const vrLight = new THREE.PointLight(0x87cefa, 0.5);
         cameraGroup.add(vrLight); // カメラグループに追加してプレイヤーと一緒に移動
         
+        // === スターゲート用のシェーダー ===
+        const eventHorizonVertexShader = `
+            uniform float time;
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            void main() {
+                vUv = uv;
+                vPosition = position;
+                
+                vec3 pos = position;
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(uv, center);
+                
+                // 波紋効果
+                float ripple1 = sin(dist * 30.0 - time * 3.0) * 0.02;
+                float ripple2 = sin(dist * 50.0 - time * 5.0 + 1.0) * 0.01;
+                float ripple3 = cos(dist * 70.0 - time * 7.0 + 2.0) * 0.005;
+                
+                // 中心部は穏やか、外側は激しく
+                float intensity = smoothstep(0.0, 0.5, dist);
+                pos.z += (ripple1 + ripple2 + ripple3) * intensity * (1.0 - dist);
+                
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `;
+        
+        const eventHorizonFragmentShader = `
+            uniform float time;
+            uniform vec3 portalColor;
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            void main() {
+                vec2 center = vec2(0.5, 0.5);
+                float dist = distance(vUv, center);
+                
+                // 放射状の波紋パターン
+                float angle = atan(vUv.y - 0.5, vUv.x - 0.5);
+                float radialWave = sin(dist * 40.0 - time * 4.0) * 0.5 + 0.5;
+                float spiralWave = sin(angle * 8.0 + dist * 20.0 - time * 3.0) * 0.5 + 0.5;
+                
+                // 色の計算
+                vec3 color = vec3(0.0);
+                
+                // 中心の明るい部分
+                float centerGlow = exp(-dist * 4.0) * 1.0;
+                color += portalColor * 1.5 * centerGlow;
+                
+                // 波紋（ポータルカラーベース）
+                float wavePattern = radialWave * spiralWave;
+                vec3 waveColor = mix(
+                    portalColor * 0.3,
+                    portalColor * 0.8,
+                    wavePattern
+                );
+                color += waveColor * (1.0 - dist * 0.7) * 0.5;
+                
+                // エッジの輝き
+                float edgeGlow = pow(1.0 - smoothstep(0.4, 0.5, dist), 3.0);
+                color += portalColor * edgeGlow * 0.8;
+                
+                // アルファ値
+                float alpha = 1.0;
+                alpha *= smoothstep(0.5, 0.48, dist);
+                
+                // HDR風の輝き
+                color = pow(color, vec3(0.8));
+                
+                gl_FragColor = vec4(color, alpha);
+            }
+        `;
+        
+        // === スターゲート作成関数 ===
+        function createStargate(position, scale = 1.0) {
+            const gateGroup = new THREE.Group();
+            gateGroup.position.copy(position);
+            
+            // メカニカルなリング
+            const outerRingGeo = new THREE.TorusGeometry(6 * scale, 0.4 * scale, 8, 50);
+            const ringMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a1a2e,
+                metalness: 0.95,
+                roughness: 0.05,
+                emissive: 0x0a0a20,
+                emissiveIntensity: 0.2
+            });
+            const outerRing = new THREE.Mesh(outerRingGeo, ringMaterial);
+            gateGroup.add(outerRing);
+            
+            // 内側の技術的なディテール
+            const detailGroup = new THREE.Group();
+            for (let i = 0; i < 38; i++) {
+                const angle = (i / 38) * Math.PI * 2;
+                
+                const chevronShape = new THREE.Shape();
+                chevronShape.moveTo(0, 0);
+                chevronShape.lineTo(-0.15, 0.3);
+                chevronShape.lineTo(0, 0.4);
+                chevronShape.lineTo(0.15, 0.3);
+                chevronShape.closePath();
+                
+                const extrudeSettings = {
+                    depth: 0.1,
+                    bevelEnabled: true,
+                    bevelSegments: 2,
+                    bevelSize: 0.02,
+                    bevelThickness: 0.02
+                };
+                
+                const chevronGeo = new THREE.ExtrudeGeometry(chevronShape, extrudeSettings);
+                const chevronMat = new THREE.MeshStandardMaterial({
+                    color: 0x2d4059,
+                    metalness: 0.9,
+                    roughness: 0.1,
+                    emissive: i % 5 === 0 ? 0x4488ff : 0x112244,
+                    emissiveIntensity: i % 5 === 0 ? 0.8 : 0.3
+                });
+                
+                const chevron = new THREE.Mesh(chevronGeo, chevronMat);
+                chevron.position.x = Math.cos(angle) * 5.5 * scale;
+                chevron.position.y = Math.sin(angle) * 5.5 * scale;
+                chevron.position.z = -0.05;
+                chevron.rotation.z = angle - Math.PI / 2;
+                detailGroup.add(chevron);
+            }
+            gateGroup.add(detailGroup);
+            
+            // イベントホライズン（水面効果）のシェーダー
+            const eventHorizonGeo = new THREE.CircleGeometry(5 * scale, 128);
+            const eventHorizonMat = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    portalColor: { value: new THREE.Color(0x0080ff) }
+                },
+                vertexShader: eventHorizonVertexShader,
+                fragmentShader: eventHorizonFragmentShader,
+                transparent: true,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+            
+            const eventHorizon = new THREE.Mesh(eventHorizonGeo, eventHorizonMat);
+            eventHorizon.position.copy(position);
+            scene.add(eventHorizon);
+            
+            // グロー効果
+            const glowGeo = new THREE.RingGeometry(4.5 * scale, 5.5 * scale, 64);
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0x0080ff,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.DoubleSide
+            });
+            const glowRing = new THREE.Mesh(glowGeo, glowMat);
+            glowRing.position.copy(position);
+            scene.add(glowRing);
+            
+            return { gateGroup, detailGroup, eventHorizon, eventHorizonMat, glowRing };
+        }
+        
+        // === スターゲートを配置（8つ、スタート地点の近くに） ===
+        const stargates = [];
+        const gatePositions = [
+            // 左側4つ
+            new THREE.Vector3(-15, 5, -10),
+            new THREE.Vector3(-15, 5, -20),
+            new THREE.Vector3(-15, 5, -30),
+            new THREE.Vector3(-15, 5, -40),
+            // 右側4つ
+            new THREE.Vector3(15, 5, -10),
+            new THREE.Vector3(15, 5, -20),
+            new THREE.Vector3(15, 5, -30),
+            new THREE.Vector3(15, 5, -40)
+        ];
+        
+        gatePositions.forEach((pos, index) => {
+            const stargate = createStargate(pos, 0.5);
+            // 左右のポータルを向かい合わせる
+            if (index < 4) {
+                // 左側のポータルは右を向く
+                stargate.gateGroup.rotation.y = Math.PI / 2;
+                stargate.eventHorizon.rotation.y = Math.PI / 2;
+                stargate.glowRing.rotation.y = Math.PI / 2;
+            } else {
+                // 右側のポータルは左を向く
+                stargate.gateGroup.rotation.y = -Math.PI / 2;
+                stargate.eventHorizon.rotation.y = -Math.PI / 2;
+                stargate.glowRing.rotation.y = -Math.PI / 2;
+            }
+            scene.add(stargate.gateGroup);
+            stargates.push(stargate);
+        });
+        
         // === InstancedMesh の作成 ===
         let geometry;
         let material;
@@ -674,6 +868,24 @@
         // アニメーション関数
         function animate() {
             const time = clock.getElapsedTime() * params.speed;
+            
+            // スターゲートのアニメーション
+            stargates.forEach((stargate, index) => {
+                // シェーダーの時間更新
+                stargate.eventHorizonMat.uniforms.time.value = time;
+                
+                // ゲートの回転
+                stargate.gateGroup.rotation.z = time * 0.05 + index * 0.5;
+                stargate.detailGroup.rotation.z = -time * 0.1 - index * 0.3;
+                
+                // グローリングのパルス
+                stargate.glowRing.material.opacity = 0.15 + Math.sin(time * 3 + index) * 0.05;
+                stargate.glowRing.scale.set(
+                    1 + Math.sin(time * 2 + index) * 0.01,
+                    1 + Math.sin(time * 2 + index) * 0.01,
+                    1
+                );
+            });
             
             // 各パーティクルの位置を更新（x=100, z=100を中心に振動）
             const centerX = 100;

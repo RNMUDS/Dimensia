@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mystical Warp Zone - 8 Portals</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000011;
+            font-family: 'Courier New', monospace;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #9090ff;
+            font-size: 14px;
+            background: rgba(0, 0, 20, 0.8);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #4040aa;
+            box-shadow: 0 0 20px rgba(64, 64, 170, 0.5);
+            z-index: 100;
+        }
+        #controls h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #a0a0ff;
+            text-shadow: 0 0 10px rgba(160, 160, 255, 0.5);
+        }
+        #controls div {
+            margin: 5px 0;
+            opacity: 0.8;
+        }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="controls">
+        <h3>古代のポータル</h3>
+        <div>W/A/S/D - 移動</div>
+        <div>Shift - 加速</div>
+        <div>マウス - 視界</div>
+    </div>
+
+    <!-- パーティクル設定 -->
+    <script>
+        window.PARTICLE_OPTIONS = {
+            particleCount: 100000,
+            color: 0x0080ff,
+            maxSize: 0.03,
+            minSize: 0.01,
+            positionSpread: {
+                x: 120,
+                y: 40,
+                z: 120
+            },
+            velocity: {
+                x: 0,
+                y: 0,
+                z: 1.0 
+            },
+            velocitySpread: {
+                x: 0.1,
+                y: 0.1,
+                z: 0.5
+            },
+            maxAge: 15,
+            minAge: 10
+        };
+         // VR用のパーティクル設定（パフォーマンス最適化）
+        window.VR_PARTICLE_OPTIONS = {
+            particleCount: 100000,       // VRではパーティクル数を減らす
+            color: 0x87cefa,
+            maxSize: 0.05,
+            positionSpread: {
+                x: 50,
+                y: 50,
+                z: 50
+            },
+            velocity: {
+                x: 0,
+                y: 0,
+                z: 2
+            },
+            maxAge: 8
+        };
+    </script>
+
+    <script type="module" src="./warp-main.js"></script>
+</body>
+</html>
