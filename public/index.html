@@ -181,6 +181,8 @@
                                 customVRButton.textContent = 'Enter VR';
                                 // VRモードを終了したらPC用パラメータに戻す
                                 switchToPCParams();
+                                // ハンドトラッキングのメッシュをクリーンアップ
+                                cleanupHandMeshes();
                             });
                         } catch (e) {
                             console.error('VRセッションの開始に失敗:', e);
@@ -212,6 +214,11 @@
         // VR空間用の追加ライト
         const vrLight = new THREE.PointLight(0x87cefa, 0.5);
         cameraGroup.add(vrLight); // カメラグループに追加してプレイヤーと一緒に移動
+        
+        // ハンド用のライト（より良い視認性のため）
+        const handLight1 = new THREE.PointLight(0xffffff, 0.1, 2);
+        handLight1.position.set(0, 0.2, 0);
+        cameraGroup.add(handLight1);
         
         // === スターゲート用のシェーダー ===
         const eventHorizonVertexShader = `
@@ -491,26 +498,52 @@
         cameraGroup.add(hand1);
         cameraGroup.add(hand2);
         
-        // ハンドモデルの作成（立方体）
-        const handGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
-        const handMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0xffdbac,
-            emissive: 0xffdbac,
-            emissiveIntensity: 0.1
+        // === リアルな手のマテリアル設定 ===
+        // 肌のマテリアル（Three.js r128対応）
+        const skinMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffb896,
+            roughness: 0.8,
+            metalness: 0.0,
+            clearcoat: 0.05,
+            clearcoatRoughness: 0.9,
+            emissive: 0x000000,
+            emissiveIntensity: 0
         });
         
-        // 関節を接続する線（シリンダー）のマテリアル
-        const boneMaterial = new THREE.MeshPhongMaterial({
-            color: 0xffdbac,
-            emissive: 0xffdbac,
-            emissiveIntensity: 0.1
-        });
+        // 関節の球体を作成（関節ごとに異なる形状）
+        function createJointSphere(radius = 0.008, type = 'normal', jointName = '') {
+            let geometry;
+            if (type === 'knuckle') {
+                // ナックル（指の付け根）はより大きく、やや扁平
+                geometry = new THREE.SphereGeometry(radius * 1.2, 16, 12);
+                geometry.scale(1, 0.8, 1.1);
+            } else if (type === 'tip') {
+                // 指先は小さく、やや細長い
+                geometry = new THREE.SphereGeometry(radius * 0.8, 16, 12);
+                geometry.scale(0.9, 0.9, 1.1);
+            } else if (type === 'wrist') {
+                // 手首は横長の楕円形
+                geometry = new THREE.SphereGeometry(radius, 16, 12);
+                geometry.scale(1.8, 0.8, 1.2); // X軸方向に1.8倍、Y軸方向に0.8倍
+            } else {
+                geometry = new THREE.SphereGeometry(radius, 16, 12);
+            }
+            const mesh = new THREE.Mesh(geometry, skinMaterial);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
         
         // 各関節用のメッシュとボーンラインを作成
         const jointMeshes1 = {};
         const jointMeshes2 = {};
         const boneLines1 = [];
         const boneLines2 = [];
+        
+        // ハンドデータ（腕の情報を含む）
+        const handData1 = { forearm: null };
+        const handData2 = { forearm: null };
+        
         
         // 指の接続関係を定義
         const fingerConnections = [
@@ -696,6 +729,57 @@
         let hand1Pinching = false;
         let hand2Pinching = false;
         
+        // ハンドメッシュのクリーンアップ関数
+        function cleanupHandMeshes() {
+            // ハンド1のクリーンアップ
+            for (const jointName in jointMeshes1) {
+                if (jointMeshes1[jointName]) {
+                    scene.remove(jointMeshes1[jointName]);
+                    jointMeshes1[jointName].geometry.dispose();
+                    delete jointMeshes1[jointName];
+                }
+            }
+            
+            // ハンド2のクリーンアップ
+            for (const jointName in jointMeshes2) {
+                if (jointMeshes2[jointName]) {
+                    scene.remove(jointMeshes2[jointName]);
+                    jointMeshes2[jointName].geometry.dispose();
+                    delete jointMeshes2[jointName];
+                }
+            }
+            
+            // ボーンラインのクリーンアップ
+            boneLines1.forEach((line, index) => {
+                if (line) {
+                    scene.remove(line);
+                    line.geometry.dispose();
+                    boneLines1[index] = null;
+                }
+            });
+            
+            boneLines2.forEach((line, index) => {
+                if (line) {
+                    scene.remove(line);
+                    line.geometry.dispose();
+                    boneLines2[index] = null;
+                }
+            });
+            
+            // 腕のクリーンアップ
+            if (handData1.forearm) {
+                scene.remove(handData1.forearm);
+                handData1.forearm.geometry.dispose();
+                handData1.forearm = null;
+            }
+            
+            if (handData2.forearm) {
+                scene.remove(handData2.forearm);
+                handData2.forearm.geometry.dispose();
+                handData2.forearm = null;
+            }
+        }
+        
         // ピンチ検出関数
         function isPinching(hand) {
             if (!hand.joints || !hand.joints['thumb-tip'] || !hand.joints['index-finger-tip']) {
@@ -767,17 +851,69 @@
         }
         
         // ハンドトラッキングの更新関数
-        function updateHandTracking(hand, jointMeshes, boneLines) {
+        function updateHandTracking(hand, jointMeshes, boneLines, handData) {
             if (renderer.xr.isPresenting && hand.joints) {
+                // ハンドが検出されているかチェック
+                let handDetected = false;
+                for (const jointName in hand.joints) {
+                    if (hand.joints[jointName]) {
+                        handDetected = true;
+                        break;
+                    }
+                }
+                
+                if (!handDetected) {
+                    // ハンドが検出されていない場合は非表示
+                    for (const jointName in jointMeshes) {
+                        if (jointMeshes[jointName]) {
+                            jointMeshes[jointName].visible = false;
+                        }
+                    }
+                    boneLines.forEach(cylinder => {
+                        if (cylinder) cylinder.visible = false;
+                    });
+                    if (handData.forearm) {
+                        handData.forearm.visible = false;
+                    }
+                    return;
+                }
+                
                 // 各関節の位置を更新
                 for (const jointName in hand.joints) {
                     const joint = hand.joints[jointName];
                     
                     // 関節のメッシュがなければ作成
                     if (!jointMeshes[jointName]) {
-                        const mesh = new THREE.Mesh(handGeometry, handMaterial);
+                        let radius, type = 'normal';
+                        if (jointName === 'wrist') {
+                            // 手首
+                            radius = 0.015;
+                            type = 'wrist';
+                        } else if (jointName.includes('metacarpal')) {
+                            // 中手骨（手の甲の骨）
+                            radius = 0.012;
+                            type = 'knuckle';
+                        } else if (jointName.includes('tip')) {
+                            // 指先
+                            radius = 0.009;
+                            type = 'tip';
+                        } else if (jointName.includes('proximal')) {
+                            // 基節骨（第三関節・MP関節・こぶしの関節）
+                            radius = 0.012;
+                        } else if (jointName.includes('intermediate')) {
+                            // 中節骨（第二関節・PIP関節）
+                            radius = 0.01;
+                        } else if (jointName.includes('distal')) {
+                            // 末節骨（第一関節・DIP関節）
+                            radius = 0.008;
+                        } else {
+                            radius = 0.008;
+                        }
+                        
+                        const mesh = createJointSphere(radius, type, jointName);
                         scene.add(mesh);
                         jointMeshes[jointName] = mesh;
+             
                     }
                     
                     // 関節の位置と回転を更新
@@ -793,6 +929,45 @@
                     jointMeshes[jointName].quaternion.copy(worldQuaternion);
                     jointMeshes[jointName].scale.copy(worldScale);
                     jointMeshes[jointName].visible = true;
+                    
+                }
+                
+                // 手首から腕（前腕）を追加
+                if (hand.joints['wrist']) {
+                    // 腕のメッシュがなければ作成
+                    if (!handData.forearm) {
+                        // 腕のシリンダー（手首側を手首に合わせた楕円形に）
+                        // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments)
+                        const forearmGeometry = new THREE.CylinderGeometry(0.015, 0.030, 0.325, 16); // 0.25 * 1.3 = 0.325
+                        // 手首の楕円形に合わせてスケールを調整
+                        forearmGeometry.scale(1.8, 1, 1.2);
+                        const forearmMesh = new THREE.Mesh(forearmGeometry, skinMaterial);
+                        forearmMesh.castShadow = true;
+                        forearmMesh.receiveShadow = true;
+                        scene.add(forearmMesh);
+                        handData.forearm = forearmMesh;
+                    }
+                    
+                    // 手首の位置と回転を取得
+                    const wristPosition = new THREE.Vector3();
+                    const wristQuaternion = new THREE.Quaternion();
+                    hand.joints['wrist'].getWorldPosition(wristPosition);
+                    hand.joints['wrist'].getWorldQuaternion(wristQuaternion);
+                    
+                    // 腕の位置を計算（手首から指の反対方向に延長）
+                    // 指は通常Z軸負方向を向いているので、腕はZ軸正方向に伸びる
+                    const armOffset = new THREE.Vector3(0, 0, 0.1625); // Z軸正方向（腕の長さの半分: 0.325 / 2）
+                    armOffset.applyQuaternion(wristQuaternion);
+                    
+                    // 腕のメッシュを更新
+                    handData.forearm.position.copy(wristPosition);
+                    handData.forearm.position.add(armOffset);
+                    
+                    // 腕の回転を手首に合わせる（シリンダーはY軸方向なので90度回転が必要）
+                    handData.forearm.quaternion.copy(wristQuaternion);
+                    // シリンダーをZ軸方向に向ける
+                    handData.forearm.rotateX(-Math.PI / 2);
+                    handData.forearm.visible = true;
                 }
                 
                 // ボーンラインを更新
@@ -802,8 +977,68 @@
                     if (hand.joints[joint1Name] && hand.joints[joint2Name]) {
                         // シリンダーがなければ作成
                         if (!boneLines[index]) {
-                            const cylinderGeometry = new THREE.CylinderGeometry(0.005, 0.005, 1, 8); // 半径0.005（直径0.01）
-                            const cylinder = new THREE.Mesh(cylinderGeometry, boneMaterial);
+                            // 部位ごとにシリンダーの太さを調整
+                            let radiusTop = 0.004;
+                            let radiusBottom = 0.004;
+                            
+                            // 手の甲（手首から指の付け根まで）
+                            if (joint1Name === 'wrist' && joint2Name.includes('metacarpal')) {
+                                // 指ごとに手の甲の太さを調整（隙間がなくなるように）
+                                if (joint2Name.includes('thumb')) {
+                                    radiusTop = 0.01;
+                                    radiusBottom = 0.01;
+                                } else if (joint2Name.includes('index')) {
+                                    radiusTop = 0.01;
+                                    radiusBottom = 0.01;
+                                } else if (joint2Name.includes('middle')) {
+                                    radiusTop = 0.010;
+                                    radiusBottom = 0.01;
+                                } else if (joint2Name.includes('ring')) {
+                                    radiusTop = 0.01;
+                                    radiusBottom = 0.01;
+                                } else if (joint2Name.includes('pinky')) {
+                                    radiusTop = 0.01;
+                                    radiusBottom = 0.01;
+                                }
+                            }
+                            // 中手骨から基節骨（手の甲から第三関節・こぶしの関節へ）
+                            else if (joint1Name.includes('metacarpal') && joint2Name.includes('proximal')) {
+                                radiusTop = 0.012;
+                                radiusBottom = 0.011;
+                            }
+                            // 基節骨（第三関節から第二関節へ）
+                            else if (joint1Name.includes('proximal') && joint2Name.includes('intermediate')) {
+                                radiusTop = 0.010;
+                                radiusBottom = 0.011;
+                            }
+                            // 中節骨（第二関節から第一関節へ）
+                            else if (joint1Name.includes('intermediate') && joint2Name.includes('distal')) {
+                                radiusTop = 0.008;
+                                radiusBottom = 0.010;
+                            }
+                            // 末節骨（第一関節から指先へ）
+                            else if (joint1Name.includes('distal') && joint2Name.includes('tip')) {
+                                radiusTop = 0.0065;
+                                radiusBottom = 0.008;
+                            }
+                            // 親指の特別な処理
+                            else if (joint1Name.includes('thumb') && joint2Name.includes('thumb')) {
+                                if (joint2Name.includes('proximal')) {
+                                    radiusTop = 0.012;
+                                    radiusBottom = 0.015;
+                                } else if (joint2Name.includes('distal')) {
+                                    radiusTop = 0.009;
+                                    radiusBottom = 0.01;
+                                } else if (joint2Name.includes('tip')) {
+                                    radiusTop = 0.009;
+                                    radiusBottom = 0.01;
+                                }
+                            }
+                            
+                            const cylinderGeometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, 1, 12);
+                            const cylinder = new THREE.Mesh(cylinderGeometry, skinMaterial);
+                            cylinder.castShadow = true;
+                            cylinder.receiveShadow = true;
                             scene.add(cylinder);
                             boneLines[index] = cylinder;
                         }
@@ -813,6 +1048,37 @@
                         const pos2 = new THREE.Vector3();
                         hand.joints[joint1Name].getWorldPosition(pos1);
                         hand.joints[joint2Name].getWorldPosition(pos2);
+                        
+                        // 手首から中手骨への接続の場合、手首側の位置を調整
+                        if (joint1Name === 'wrist' && joint2Name.includes('metacarpal')) {
+                            // 各指に応じて手首の楕円形上の位置にオフセット
+                            const wristQuaternion = new THREE.Quaternion();
+                            hand.joints[joint1Name].getWorldQuaternion(wristQuaternion);
+                            
+                            let xOffset = 0;
+                            let zOffset = 0;
+                            if (joint2Name.includes('thumb')) {
+                                xOffset = -0.018; // 親指は左側かつ前方
+                                zOffset = -0.008;
+                            } else if (joint2Name.includes('index')) {
+                                xOffset = -0.01; // 人差し指
+                                zOffset = -0.002;
+                            } else if (joint2Name.includes('middle')) {
+                                xOffset = 0; // 中指は中央
+                                zOffset = 0;
+                            } else if (joint2Name.includes('ring')) {
+                                xOffset = 0.01; // 薬指
+                                zOffset = -0.002;
+                            } else if (joint2Name.includes('pinky')) {
+                                xOffset = 0.018; // 小指は右側
+                                zOffset = -0.004;
+                            }
+                            
+                            // オフセットを手首の回転に合わせて適用
+                            const offset = new THREE.Vector3(xOffset, 0, zOffset);
+                            offset.applyQuaternion(wristQuaternion);
+                            pos1.add(offset);
+                        }
                         
                         // 中点を計算
                         const midpoint = new THREE.Vector3();
@@ -824,8 +1090,8 @@
                         // シリンダーの位置を中点に設定
                         boneLines[index].position.copy(midpoint);
                         
-                        // シリンダーの長さを調整
-                        boneLines[index].scale.y = distance;
+                        // シリンダーの長さを調整（関節間の隙間を考慮）
+                        boneLines[index].scale.y = distance * 0.9;
                         
                         // シリンダーを2点間の方向に回転
                         const direction = new THREE.Vector3();
@@ -835,7 +1101,7 @@
                         boneLines[index].quaternion.copy(quaternion);
                         
                         boneLines[index].visible = true;
-                        boneLines[index].frustumCulled = false; // カリングを無効化
+                        boneLines[index].frustumCulled = false;
                     }
                 });
             } else {
@@ -848,6 +1114,10 @@
                 boneLines.forEach(cylinder => {
                     if (cylinder) cylinder.visible = false;
                 });
+                // 腕も非表示
+                if (handData.forearm) {
+                    handData.forearm.visible = false;
+                }
             }
         }
         
@@ -923,8 +1193,8 @@
                 updateTeleport(controller2, controller2Squeezing);
                 
                 // ハンドトラッキングの更新
-                updateHandTracking(hand1, jointMeshes1, boneLines1);
-                updateHandTracking(hand2, jointMeshes2, boneLines2);
+                updateHandTracking(hand1, jointMeshes1, boneLines1, handData1);
+                updateHandTracking(hand2, jointMeshes2, boneLines2, handData2);
                 
                 // ピンチ状態の更新とテレポート処理
                 const wasPinching1 = hand1Pinching;
